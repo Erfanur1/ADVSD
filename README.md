@@ -13,7 +13,7 @@ Users track, research, and analyse prediction markets (Polymarket / Kalshi style
 | Humza Hussein | Market Research Notes & News Feed | `student-3/` |
 | Erfanur Rahman | AI Market Analyst Assistant | `student-4/` |
 
-> Add each member's GitHub username next to their name before the Week 4 submission.
+
 
 ## Architecture (Release 0)
 
