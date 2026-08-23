@@ -1,0 +1,1 @@
+-- TODO(Student 2): define tables for "Portfolio & Position Tracker" (>=3 tables, >=10 rows each). See student-1/database/schema.sql.
