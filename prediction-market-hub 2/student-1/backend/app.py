@@ -43,6 +43,58 @@ def get_market(mid):
     return (jsonify(dict(row)), 200) if row else (jsonify(error="not found"), 404)
 
 
+@app.post("/markets")
+def create_market():
+    data = request.get_json(force=True) or {}
+    conn = db()
+    cur = conn.execute(
+        "INSERT INTO markets (title, category, current_probability, volume, close_date) "
+        "VALUES (?,?,?,?,?)",
+        (
+            data.get("title"),
+            data.get("category"),
+            data.get("current_probability"),
+            data.get("volume"),
+            data.get("close_date"),
+        ),
+    )
+    conn.commit()
+    return jsonify(id=cur.lastrowid), 201
+
+
+@app.put("/markets/<int:mid>")
+def update_market(mid):
+    data = request.get_json(force=True) or {}
+    conn = db()
+    existing = conn.execute("SELECT * FROM markets WHERE id=?", (mid,)).fetchone()
+    if existing is None:
+        return jsonify(error="not found"), 404
+    conn.execute(
+        "UPDATE markets SET title=?, category=?, current_probability=?, volume=?, close_date=? WHERE id=?",
+        (
+            data.get("title", existing["title"]),
+            data.get("category", existing["category"]),
+            data.get("current_probability", existing["current_probability"]),
+            data.get("volume", existing["volume"]),
+            data.get("close_date", existing["close_date"]),
+            mid,
+        ),
+    )
+    conn.commit()
+    return jsonify(updated=mid)
+
+
+@app.delete("/markets/<int:mid>")
+def delete_market(mid):
+    conn = db()
+    existing = conn.execute("SELECT * FROM markets WHERE id=?", (mid,)).fetchone()
+    if existing is None:
+        return jsonify(error="not found"), 404
+    conn.execute("DELETE FROM markets WHERE id=?", (mid,))
+    conn.commit()
+    return jsonify(deleted=mid)
+
+
 # ---- watchlist: full CRUD ----
 @app.get("/watchlist")
 def list_watchlist():
