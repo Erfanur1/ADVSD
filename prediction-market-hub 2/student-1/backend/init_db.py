@@ -1,5 +1,8 @@
 """Create the SQLite DB from schema.sql + seed.sql (idempotent-ish)."""
 import os, sqlite3, pathlib
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DB_PATH = os.getenv("DB_PATH", "/data/student1.db")
 HERE = pathlib.Path(__file__).resolve().parent.parent / "database"

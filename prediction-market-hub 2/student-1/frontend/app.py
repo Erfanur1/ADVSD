@@ -1,6 +1,9 @@
 import os
 import requests
 from flask import Flask, render_template_string, request
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 API = os.getenv("BACKEND_URL", "http://student-1-backend:5001")
