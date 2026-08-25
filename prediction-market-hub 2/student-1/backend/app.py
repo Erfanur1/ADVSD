@@ -2,6 +2,9 @@ import os
 import sqlite3
 import requests
 from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 DB_PATH = os.getenv("DB_PATH", "/data/student1.db")
