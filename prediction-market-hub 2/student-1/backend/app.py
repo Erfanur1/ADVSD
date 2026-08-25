@@ -141,21 +141,44 @@ def delete_watchlist(wid):
 # ---- AI: trending summary via shared AI-Mode ----
 @app.post("/ai/trending")
 def ai_trending():
+    trace = []
+
+    # PLAN: decide what data to use as context for the AI
     rows = db().execute("SELECT title, category, current_probability, volume "
                         "FROM markets ORDER BY volume DESC LIMIT 6").fetchall()
     context = "\n".join(
         f"- {r['title']} ({r['category']}): p={r['current_probability']}, vol={r['volume']}"
         for r in rows
     )
+    trace.append({"stage": "Plan", "detail": f"Selected top {len(rows)} markets by volume as context."})
+
+    # ACT: call the shared AI-Mode service
+    trace.append({"stage": "Act", "detail": "Called AI-Mode with the gathered context."})
+    ai_reachable = True
+    output = ""
     try:
         resp = requests.post(
             f"{AI_MODE_URL}/ai/complete",
             json={"task": "Summarise which markets are trending and why.", "context": context},
             timeout=120,
         )
-        return jsonify(resp.json()), resp.status_code
-    except Exception as exc:  # noqa: BLE001
-        return jsonify(error=str(exc)), 502
+        resp.raise_for_status()
+        output = resp.json().get("output", "")
+    except Exception:
+        ai_reachable = False
+
+    # OBSERVE: check whether we got a usable answer
+    got_answer = ai_reachable and bool(output)
+    trace.append({"stage": "Observe", "detail": f"Received {'a' if got_answer else 'no'} usable answer from AI-Mode."})
+
+    # ADAPT: fall back gracefully if AI-Mode was unreachable or returned nothing
+    if not got_answer:
+        output = "AI-Mode is currently unavailable. Please try again shortly."
+        trace.append({"stage": "Adapt", "detail": "Returned a fallback message since AI-Mode could not be reached."})
+    else:
+        trace.append({"stage": "Adapt", "detail": "Returned AI-Mode's summary to the user."})
+
+    return jsonify(output=output, agentic_trace=trace)
 
 
 if __name__ == "__main__":
