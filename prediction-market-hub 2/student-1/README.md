@@ -14,3 +14,5 @@ Contents:
 - `backend/` — Flask API: markets Read/search, watchlist CRUD, `/ai/trending`
 - `frontend/` — HTMX page (search + AI-Mode panel), linked from the home page
 - `tests/` — pytest suite (health, seeded data, watchlist CRUD)
+
+<!-- CI trigger test -->
