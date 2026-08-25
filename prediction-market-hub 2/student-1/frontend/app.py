@@ -73,9 +73,15 @@ def watchlist_list():
         f"<li><b>{r['title']}</b> — note: {r.get('note','')} | priority: {r.get('priority',0)} "
         f"<button hx-delete='/watchlist/{r['id']}/delete' hx-post='/watchlist/{r['id']}/delete' "
         f"hx-target='#watchlist' hx-swap='innerHTML'>Remove</button></li>"
+        f"<form hx-post='/watchlist/{r['id']}/update' hx-target='#watchlist' hx-swap='innerHTML' style='display:inline'>"
+        f"<input name='note' placeholder='New note' value=\"{r.get('note','')}\" style='width:120px'>"
+        f"<input name='priority' placeholder='0-3' value='{r.get('priority',0)}' style='width:50px'>"
+        f"<button type='submit'>Save</button>"
+
         for r in rows
     )
     return f"<ul>{items or '<li>Your watchlist is empty.</li>'}</ul>"
+
 
 
 @app.post("/watchlist/add")
@@ -108,6 +114,20 @@ def watchlist_delete(wid):
     except Exception:
         pass
     return watchlist_list()
+
+
+@app.post("/watchlist/<int:wid>/update")
+def watchlist_update(wid):
+    payload = {
+        "note": request.form.get("note", ""),
+        "priority": request.form.get("priority", 0) or 0,
+    }
+    try:
+        requests.put(f"{API}/watchlist/{wid}", json=payload, timeout=10)
+    except Exception:
+        pass
+    return watchlist_list()
+
 
 
 @app.post("/ai")
