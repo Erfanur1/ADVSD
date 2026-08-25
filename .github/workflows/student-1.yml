@@ -3,10 +3,10 @@ name: student-1-ci
 on:
   push:
     paths:
-      - "prediction-market-hub 2/student-1/**"
+      - "student-1/**"
   pull_request:
     paths:
-      - "prediction-market-hub 2/student-1/**"
+      - "student-1/**"
   workflow_dispatch:
 
 jobs:
@@ -21,21 +21,21 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend dependencies
-        run: pip install -r "prediction-market-hub 2/student-1/backend/requirements.txt"
+        run: pip install -r "student-1/backend/requirements.txt"
 
       - name: Install frontend dependencies
-        run: pip install -r "prediction-market-hub 2/student-1/frontend/requirements.txt"
+        run: pip install -r "student-1/frontend/requirements.txt"
 
       - name: Syntax check (compile all Python files)
         run: |
-          python -m py_compile "prediction-market-hub 2/student-1/backend/app.py"
-          python -m py_compile "prediction-market-hub 2/student-1/backend/init_db.py"
-          python -m py_compile "prediction-market-hub 2/student-1/frontend/app.py"
+          python -m py_compile "student-1/backend/app.py"
+          python -m py_compile "student-1/backend/init_db.py"
+          python -m py_compile "student-1/frontend/app.py"
 
       - name: Run pytest
         run: |
-          cd "prediction-market-hub 2/student-1"
+          cd "student-1"
           python -m pytest tests/ -v
 
       - name: Build Docker image
-        run: docker build -t student-1-image "./prediction-market-hub 2/student-1"
+        run: docker build -t student-1-image "./student-1"
