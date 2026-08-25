@@ -7,6 +7,9 @@ returns the model's text plus the loop trace (so the workflow is demonstrable).
 import os
 import requests
 from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
