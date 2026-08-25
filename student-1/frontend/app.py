@@ -69,17 +69,42 @@ def watchlist_list():
         rows = requests.get(f"{API}/watchlist", timeout=10).json()
     except Exception:
         rows = []
-    items = "".join(
-        f"<li><b>{r['title']}</b> — note: {r.get('note','')} | priority: {r.get('priority',0)} "
-        f"<button hx-delete='/watchlist/{r['id']}/delete' hx-post='/watchlist/{r['id']}/delete' "
-        f"hx-target='#watchlist' hx-swap='innerHTML'>Remove</button></li>"
-        f"<form hx-post='/watchlist/{r['id']}/update' hx-target='#watchlist' hx-swap='innerHTML' style='display:inline'>"
-        f"<input name='note' placeholder='New note' value=\"{r.get('note','')}\" style='width:120px'>"
-        f"<input name='priority' placeholder='0-3' value='{r.get('priority',0)}' style='width:50px'>"
-        f"<button type='submit'>Save</button>"
 
+    items = "".join(
+        f"""
+        <li>
+            <b>{r['title']}</b>
+            — note: {r.get('note', '')}
+            | priority: {r.get('priority', 0)}
+
+            <form hx-post="/watchlist/{r['id']}/update"
+                  hx-target="#watchlist"
+                  hx-swap="innerHTML"
+                  style="display:inline">
+                <input name="note"
+                       placeholder="New note"
+                       value="{r.get('note', '')}"
+                       style="width:120px">
+
+                <input name="priority"
+                       placeholder="0-3"
+                       value="{r.get('priority', 0)}"
+                       style="width:50px">
+
+                <button type="submit">Save</button>
+            </form>
+
+            <button
+                hx-post="/watchlist/{r['id']}/delete"
+                hx-target="#watchlist"
+                hx-swap="innerHTML">
+                Remove
+            </button>
+        </li>
+        """
         for r in rows
     )
+
     return f"<ul>{items or '<li>Your watchlist is empty.</li>'}</ul>"
 
 
