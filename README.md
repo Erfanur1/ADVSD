@@ -34,7 +34,7 @@ Prerequisites: Docker Desktop, Git. (Ollama runs inside Docker Compose.)
 ```bash
 # 1. Pull the LLM into the ollama volume (first run only)
 docker compose up -d ollama
-docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull llama3.2:3b
 
 # 2. Start the whole stack
 docker compose up --build
@@ -69,4 +69,4 @@ See the ASD 2026 spec §7.1. Top level: `.github/workflows/`, `docs/`, `shared/`
 
 ## Approved AI stack
 
-- **Ollama** runtime, **Llama 3.1 8B** (or Qwen2.5 7B) — approved open-source LLM only.
+- **Ollama** runtime, **Llama 3.2 3B** by default (set `LLM_MODEL` to swap in a larger model like Llama 3.1 8B or Qwen2.5 7B if your machine has the RAM) — approved open-source LLM only.
