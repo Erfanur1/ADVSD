@@ -1,1 +1,0 @@
--- TODO(Student 3): define tables for "Market Research Notes & News Feed" (>=3 tables, >=10 rows each). See student-1/database/schema.sql.

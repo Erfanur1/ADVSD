@@ -1,0 +1,43 @@
+name: student-4-ci
+
+on:
+  push:
+    paths:
+      - "student-4/**"
+      - ".github/workflows/student-4.yml"
+  pull_request:
+    paths:
+      - "student-4/**"
+      - ".github/workflows/student-4.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: pip install -r "student-4/backend/requirements.txt"
+
+      - name: Install frontend dependencies
+        run: pip install -r "student-4/frontend/requirements.txt"
+
+      - name: Syntax check (compile all Python files)
+        run: |
+          python -m py_compile "student-4/backend/app.py"
+          python -m py_compile "student-4/backend/init_db.py"
+          python -m py_compile "student-4/frontend/app.py"
+
+      - name: Run pytest
+        run: |
+          cd "student-4"
+          python -m pytest tests/ -v
+
+      - name: Build Docker image
+        run: docker build -t student-4-image "./student-4"

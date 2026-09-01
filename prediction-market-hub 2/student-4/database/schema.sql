@@ -1,1 +1,0 @@
--- TODO(Student 4): define tables for "AI Market Analyst Assistant" (>=3 tables, >=10 rows each). See student-1/database/schema.sql.

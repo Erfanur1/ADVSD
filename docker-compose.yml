@@ -1,0 +1,83 @@
+# Prediction Market Intelligence Hub — Release 0 integrated stack.
+# Runs: shared home page, Ollama + AI-Mode, and all 4 students' frontend/backend.
+services:
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+
+  ai-mode:
+    build: ./ai-services/ai-mode
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-llama3.2:3b}
+    ports: ["8000:8000"]
+    depends_on: [ollama]
+
+  home:
+    build: ./shared
+    ports: ["8080:8080"]
+
+  # ---------- Student 1 (reference: full CRUD + AI) ----------
+  student-1-backend:
+    build: ./student-1
+    environment:
+      DB_PATH: /data/student1.db
+      AI_MODE_URL: http://ai-mode:8000
+    volumes: ["s1data:/data"]
+    ports: ["5001:5001"]
+    depends_on: [ai-mode]
+    command: sh -c "python backend/init_db.py && python backend/app.py"
+
+  student-1-frontend:
+    build: ./student-1
+    environment:
+      BACKEND_URL: http://student-1-backend:5001
+    ports: ["5101:5101"]
+    depends_on: [student-1-backend]
+    command: python frontend/app.py
+
+  # ---------- Students 2-4 (scaffold: health + landing) ----------
+  student-2-backend: { build: ./student-2, ports: ["5002:5002"], command: python backend/app.py }
+  student-2-frontend: { build: ./student-2, ports: ["5102:5102"], command: python frontend/app.py, depends_on: [student-2-backend] }
+  student-3-backend:
+    build: ./student-3
+    environment:
+      DB_PATH: /data/student3.db
+      AI_MODE_URL: http://ai-mode:8000
+    volumes: ["s3data:/data"]
+    ports: ["5003:5003"]
+    depends_on: [ai-mode]
+    command: sh -c "python backend/init_db.py && python backend/app.py"
+
+  student-3-frontend:
+    build: ./student-3
+    environment:
+      BACKEND_URL: http://student-3-backend:5003
+    ports: ["5103:5103"]
+    depends_on: [student-3-backend]
+    command: python frontend/app.py
+  student-4-backend:
+    build: ./student-4
+    environment:
+      DB_PATH: /data/student4.db
+      AI_MODE_URL: http://ai-mode:8000
+    volumes: ["s4data:/data"]
+    ports: ["5004:5004"]
+    depends_on: [ai-mode]
+    command: sh -c "python backend/init_db.py && python backend/app.py"
+
+  student-4-frontend:
+    build: ./student-4
+    environment:
+      BACKEND_URL: http://student-4-backend:5004
+    ports: ["5104:5104"]
+    depends_on: [student-4-backend]
+    command: python frontend/app.py
+
+volumes:
+  ollama:
+  s1data:
+  s3data:
+  s4data:
