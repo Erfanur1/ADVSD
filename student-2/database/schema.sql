@@ -1,4 +1,3 @@
--- TODO(Student 2): define tables for "Portfolio & Position Tracker" (>=3 tables, >=10 rows each). See student-1/database/schema.sql.
 CREATE TABLE IF NOT EXISTS portfolios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -12,7 +11,7 @@ CREATE TABLE IF NOT EXISTS positions (
     side TEXT NOT NULL,
     entry_price REAL NOT NULL,
     size INTEGER NOT NULL,
-    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS trade_history (
@@ -21,5 +20,5 @@ CREATE TABLE IF NOT EXISTS trade_history (
     trade_type TEXT,
     shares INTEGER,
     price REAL,
-    FOREIGN KEY (position_id) REFERENCES positions(id)
+    FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE
 );

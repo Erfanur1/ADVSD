@@ -84,31 +84,64 @@ def delete_position(pid):
     return jsonify(deleted=pid)
 
 
+# ---- trade_history: Read ----
+@app.get("/trade-history")
+def list_trade_history():
+    rows = db().execute(
+        "SELECT t.*, p.market_ticker FROM trade_history t "
+        "JOIN positions p ON p.id = t.position_id "
+        "ORDER BY t.id DESC"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 # ---- AI: risk analysis via shared AI-Mode ----
 @app.post("/ai/analyze-risk")
 def ai_analyze_risk():
-    rows = db().execute("SELECT market_ticker, side, entry_price, size FROM positions").fetchall()
-    
-    if not rows:
-        return jsonify(response="No open positions to analyze."), 200
+    trace = []
 
+    # PLAN: decide what data to use as context for the AI
+    rows = db().execute("SELECT market_ticker, side, entry_price, size FROM positions").fetchall()
     context = "\n".join(
         f"- {r['size']} shares of {r['market_ticker']} ({r['side']} at ${r['entry_price']})"
         for r in rows
     )
-    
+    trace.append({"stage": "Plan", "detail": f"Selected {len(rows)} open positions as context."})
+
+    if not rows:
+        trace.append({"stage": "Act", "detail": "Skipped AI-Mode call; no positions to analyze."})
+        return jsonify(output="No open positions to analyze.", agentic_trace=trace)
+
+    # ACT: call the shared AI-Mode service
+    trace.append({"stage": "Act", "detail": "Called AI-Mode with the gathered context."})
+    ai_reachable = True
+    output = ""
     try:
         resp = requests.post(
             f"{AI_MODE_URL}/ai/complete",
             json={
-                "task": "Analyze the risk of this prediction market portfolio and suggest any rebalancing. Keep the analysis strictly under 3 sentences.", 
-                "context": context
+                "task": "Analyze the risk of this prediction market portfolio and suggest any rebalancing. Keep the analysis strictly under 3 sentences.",
+                "context": context,
             },
             timeout=120,
         )
-        return jsonify(resp.json()), resp.status_code
-    except Exception as exc:  # noqa: BLE001
-        return jsonify(error=str(exc)), 502
+        resp.raise_for_status()
+        output = resp.json().get("output", "")
+    except Exception:
+        ai_reachable = False
+
+    # OBSERVE: check whether we got a usable answer
+    got_answer = ai_reachable and bool(output)
+    trace.append({"stage": "Observe", "detail": f"Received {'a' if got_answer else 'no'} usable answer from AI-Mode."})
+
+    # ADAPT: fall back gracefully if AI-Mode was unreachable or returned nothing
+    if not got_answer:
+        output = "AI-Mode is currently unavailable. Please try again shortly."
+        trace.append({"stage": "Adapt", "detail": "Returned a fallback message since AI-Mode could not be reached."})
+    else:
+        trace.append({"stage": "Adapt", "detail": "Returned AI-Mode's risk analysis to the user."})
+
+    return jsonify(output=output, agentic_trace=trace)
 
 
 if __name__ == "__main__":
