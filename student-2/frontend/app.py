@@ -65,7 +65,7 @@ HTML_TEMPLATE = """
 @app.get("/")
 def home():
     try:
-        resp = requests.get(f"{BACKEND_URL}/api/positions")
+        resp = requests.get(f"{BACKEND_URL}/positions")
         positions = resp.json() if resp.status_code == 200 else []
     except:
         positions = []
@@ -73,7 +73,7 @@ def home():
 
 @app.route("/proxy/api/positions/<int:pos_id>", methods=["DELETE"])
 def proxy_delete(pos_id):
-    resp = requests.delete(f"{BACKEND_URL}/api/positions/{pos_id}")
+    resp = requests.delete(f"{BACKEND_URL}/positions/{pos_id}")
     return resp.text, resp.status_code
 
 @app.route("/proxy/ai/analyze-risk", methods=["POST"])

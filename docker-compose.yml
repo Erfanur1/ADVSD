@@ -38,9 +38,26 @@ services:
     depends_on: [student-1-backend]
     command: python frontend/app.py
 
-  # ---------- Students 2-4 (scaffold: health + landing) ----------
-  student-2-backend: { build: ./student-2, ports: ["5002:5002"], command: python backend/app.py }
-  student-2-frontend: { build: ./student-2, ports: ["5102:5102"], command: python frontend/app.py, depends_on: [student-2-backend] }
+  # ---------- Student 2 (Portfolio & Position Tracker) ----------
+  student-2-backend:
+    build: ./student-2
+    environment:
+      DB_PATH: /data/student2.db
+      AI_MODE_URL: http://ai-mode:8000
+    volumes: ["s2data:/data"]
+    ports: ["5002:5002"]
+    depends_on: [ai-mode]
+    command: sh -c "python backend/init_db.py && python backend/app.py"
+
+  student-2-frontend:
+    build: ./student-2
+    environment:
+      BACKEND_URL: http://student-2-backend:5002
+    ports: ["5102:5102"]
+    depends_on: [student-2-backend]
+    command: python frontend/app.py
+
+  # ---------- Student 3 (Market Research Notes & News Feed) ----------
   student-3-backend:
     build: ./student-3
     environment:
@@ -58,6 +75,8 @@ services:
     ports: ["5103:5103"]
     depends_on: [student-3-backend]
     command: python frontend/app.py
+
+  # ---------- Student 4 (AI Market Analyst Assistant) ----------
   student-4-backend:
     build: ./student-4
     environment:
@@ -79,5 +98,6 @@ services:
 volumes:
   ollama:
   s1data:
+  s2data:
   s3data:
   s4data:
