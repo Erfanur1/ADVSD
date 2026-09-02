@@ -6,80 +6,88 @@ app = Flask(__name__)
 # Uses internal Docker DNS name when running in compose, otherwise localhost
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://student-2-backend:5002")
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Portfolio Tracker</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link rel="stylesheet" href="http://localhost:8080/css/theme.css">
-    <style>
-        body { padding: 20px; font-family: sans-serif; max-width: 900px; margin: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        button { cursor: pointer; padding: 5px 10px; background-color: #ff4d4d; color: white; border: none; border-radius: 3px;}
-        .ai-btn { background-color: #3273dc; margin-bottom: 10px; }
-    </style>
-</head>
-<body>
-    <a href="http://localhost:8080">← Back to Home</a>
-    <h1>Portfolio & Position Tracker</h1>
-    
-    <div style="background: #eef; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
-        <h3>Agentic AI Risk Analyst</h3>
-        <button class="ai-btn" hx-post="/proxy/ai/analyze-risk" hx-target="#ai-output" hx-indicator="#loading">
-            Analyze My Portfolio Risk
-        </button>
-        <span id="loading" class="htmx-indicator" style="display:none;"> (Consulting LLM...)</span>
-        <div id="ai-output" style="margin-top: 10px;"></div>
-    </div>
+PAGE = """
+<!doctype html><html><head>
+<meta charset="utf-8"><title>Portfolio & Position Tracker</title>
+<link rel="stylesheet" href="http://localhost:8080/css/theme.css">
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head><body>
+<header><h1>Portfolio &amp; Position Tracker</h1>
+<a href="http://localhost:8080/">&larr; Home</a></header>
+<main>
+  <section>
+    <h2>Open positions</h2>
+    <div id="positions" class="entry-list" hx-get="/positions-list" hx-trigger="load"></div>
+  </section>
 
-    <h2>Open Positions</h2>
-    <table>
-        <thead>
-            <tr><th>ID</th><th>Market Ticker</th><th>Side</th><th>Entry Price</th><th>Size</th><th>Action</th></tr>
-        </thead>
-        <tbody id="positions-body">
-            {% for p in positions %}
-            <tr id="pos-{{ p.id }}">
-                <td>{{ p.id }}</td>
-                <td>{{ p.market_ticker }}</td>
-                <td>{{ p.side }}</td>
-                <td>${{ p.entry_price }}</td>
-                <td>{{ p.size }}</td>
-                <td>
-                    <button hx-delete="/proxy/api/positions/{{ p.id }}" hx-target="#pos-{{ p.id }}" hx-swap="outerHTML">
-                        Close Position
-                    </button>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</body>
-</html>
+  <section>
+    <h2>Agentic AI Risk Analyst</h2>
+    <div class="panel">
+      <button hx-post="/ai/analyze-risk" hx-target="#ai-out" hx-swap="innerHTML" hx-indicator="#ai-loading">
+        Analyze My Portfolio Risk
+      </button>
+      <span id="ai-loading" class="htmx-indicator empty">Thinking&hellip;</span>
+      <div id="ai-out">
+        <p class="empty">Run an analysis to see the AI's take on your portfolio risk and its Plan &rarr; Act &rarr; Observe &rarr; Adapt trace.</p>
+      </div>
+    </div>
+  </section>
+</main></body></html>
 """
+
+
+def render_position(r):
+    return f"""
+    <div class="entry-row" id="pos-{r['id']}">
+      <div class="entry-main">
+        <p class="entry-title">{r['market_ticker']} <span class="pill">{r['side']}</span></p>
+        <p class="entry-context">Entry ${r['entry_price']} &middot; Size {r['size']}</p>
+      </div>
+      <button hx-post="/positions/{r['id']}/close" hx-target="#positions" hx-swap="innerHTML">
+        Close Position
+      </button>
+    </div>
+    """
+
+
+def positions_list():
+    try:
+        rows = requests.get(f"{BACKEND_URL}/positions", timeout=10).json()
+    except Exception:
+        rows = []
+    if not rows:
+        return '<p class="empty">No open positions.</p>'
+    return "".join(render_position(r) for r in rows)
+
 
 @app.get("/")
 def home():
+    return render_template_string(PAGE)
+
+
+@app.get("/positions-list")
+def positions_list_route():
+    return positions_list()
+
+
+@app.post("/positions/<int:pos_id>/close")
+def close_position(pos_id):
     try:
-        resp = requests.get(f"{BACKEND_URL}/positions")
-        positions = resp.json() if resp.status_code == 200 else []
-    except:
-        positions = []
-    return render_template_string(HTML_TEMPLATE, positions=positions)
+        requests.delete(f"{BACKEND_URL}/positions/{pos_id}", timeout=10)
+    except Exception:
+        pass
+    return positions_list()
 
-@app.route("/proxy/api/positions/<int:pos_id>", methods=["DELETE"])
-def proxy_delete(pos_id):
-    resp = requests.delete(f"{BACKEND_URL}/positions/{pos_id}")
-    return resp.text, resp.status_code
 
-@app.route("/proxy/ai/analyze-risk", methods=["POST"])
-def proxy_ai():
-    resp = requests.post(f"{BACKEND_URL}/ai/analyze-risk")
-    return resp.text, resp.status_code
+@app.post("/ai/analyze-risk")
+def ai_analyze_risk():
+    try:
+        data = requests.post(f"{BACKEND_URL}/ai/analyze-risk", timeout=120).json()
+        output = data.get("output", "").strip()
+        return f"<div>{output}</div>" if output else '<p class="empty">No output.</p>'
+    except Exception as exc:  # noqa: BLE001
+        return f'<p class="empty">AI error: {exc}</p>'
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5102)
