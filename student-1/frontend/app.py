@@ -19,29 +19,72 @@ PAGE = """
 <main>
   <section>
     <h2>Markets</h2>
-    <input name="q" placeholder="Search markets..."
-           hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms">
-    <div id="markets" hx-get="/search" hx-trigger="load"></div>
+    <div class="toolbar">
+      <input name="q" placeholder="Search markets..."
+             hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms, load">
+    </div>
+    <div id="markets" class="item-grid"></div>
   </section>
 
   <section>
-    <h2>My Watchlist</h2>
-    <form hx-post="/watchlist/add" hx-target="#watchlist" hx-swap="innerHTML">
-      <input name="market_id" placeholder="Market ID" required style="width:90px">
+    <h2>My watchlist</h2>
+    <form class="add-row" hx-post="/watchlist/add" hx-target="#watchlist" hx-swap="innerHTML">
+      <input name="market_id" placeholder="Market ID" required style="max-width:110px">
       <input name="note" placeholder="Note (optional)">
-      <input name="priority" placeholder="Priority (0-3)" style="width:110px">
-      <button type="submit">Add to Watchlist</button>
+      <input name="priority" placeholder="Priority 0-3" style="max-width:120px">
+      <button type="submit">Add to watchlist</button>
     </form>
-    <div id="watchlist" hx-get="/watchlist-list" hx-trigger="load"></div>
+    <div id="watchlist" class="entry-list" hx-get="/watchlist-list" hx-trigger="load"></div>
   </section>
 
   <section>
     <h2>AI-Mode: what's trending?</h2>
-    <button hx-post="/ai" hx-target="#ai-out">Ask AI</button>
-    <pre id="ai-out"></pre>
+    <div class="panel">
+      <button hx-post="/ai" hx-target="#ai-out" hx-indicator="#ai-loading">Ask AI</button>
+      <span id="ai-loading" class="htmx-indicator empty">Thinking&hellip;</span>
+      <div id="ai-out"></div>
+    </div>
   </section>
 </main></body></html>
 """
+
+
+def render_market(r):
+    return f"""
+    <article class="item-card">
+      <div class="item-meta">
+        <span class="pill">{r['category']}</span>
+        <span class="prob">{int(r['current_probability']*100)}%</span>
+      </div>
+      <h3>{r['title']}</h3>
+      <div class="item-sub">id {r['id']}</div>
+      <div class="item-actions">
+        <button hx-post="/watchlist/quick-add/{r['id']}" hx-target="#watchlist" hx-swap="innerHTML">
+          + Watchlist
+        </button>
+      </div>
+    </article>
+    """
+
+
+def render_entry(r):
+    return f"""
+    <div class="entry-row">
+      <div class="entry-main">
+        <p class="entry-title">{r['title']}</p>
+        <p class="entry-context">Priority {r.get('priority', 0)}{' &middot; ' + r['note'] if r.get('note') else ''}</p>
+      </div>
+      <form class="entry-edit" hx-post="/watchlist/{r['id']}/update" hx-target="#watchlist" hx-swap="innerHTML">
+        <input name="note" placeholder="Note" value="{r.get('note', '')}" style="max-width:140px">
+        <input name="priority" placeholder="0-3" value="{r.get('priority', 0)}" style="max-width:60px">
+        <button type="submit">Save</button>
+      </form>
+      <button hx-post="/watchlist/{r['id']}/delete" hx-target="#watchlist" hx-swap="innerHTML">
+        Remove
+      </button>
+    </div>
+    """
+
 
 @app.get("/")
 def home():
@@ -55,12 +98,9 @@ def search():
         rows = requests.get(f"{API}/markets", params={"q": q}, timeout=10).json()
     except Exception:
         rows = []
-    items = "".join(
-        f"<li><b>{r['title']}</b> (id={r['id']}) — {r['category']} (p={r['current_probability']}) "
-        f"<button hx-post='/watchlist/quick-add/{r['id']}' hx-target='#watchlist' hx-swap='innerHTML'>+ Watchlist</button></li>"
-        for r in rows
-    )
-    return f"<ul>{items or '<li>No markets.</li>'}</ul>"
+    if not rows:
+        return '<p class="empty">No markets match your search.</p>'
+    return "".join(render_market(r) for r in rows)
 
 
 @app.get("/watchlist-list")
@@ -69,44 +109,9 @@ def watchlist_list():
         rows = requests.get(f"{API}/watchlist", timeout=10).json()
     except Exception:
         rows = []
-
-    items = "".join(
-        f"""
-        <li>
-            <b>{r['title']}</b>
-            — note: {r.get('note', '')}
-            | priority: {r.get('priority', 0)}
-
-            <form hx-post="/watchlist/{r['id']}/update"
-                  hx-target="#watchlist"
-                  hx-swap="innerHTML"
-                  style="display:inline">
-                <input name="note"
-                       placeholder="New note"
-                       value="{r.get('note', '')}"
-                       style="width:120px">
-
-                <input name="priority"
-                       placeholder="0-3"
-                       value="{r.get('priority', 0)}"
-                       style="width:50px">
-
-                <button type="submit">Save</button>
-            </form>
-
-            <button
-                hx-post="/watchlist/{r['id']}/delete"
-                hx-target="#watchlist"
-                hx-swap="innerHTML">
-                Remove
-            </button>
-        </li>
-        """
-        for r in rows
-    )
-
-    return f"<ul>{items or '<li>Your watchlist is empty.</li>'}</ul>"
-
+    if not rows:
+        return '<p class="empty">Your watchlist is empty — add a market above.</p>'
+    return "".join(render_entry(r) for r in rows)
 
 
 @app.post("/watchlist/add")
@@ -154,14 +159,14 @@ def watchlist_update(wid):
     return watchlist_list()
 
 
-
 @app.post("/ai")
 def ai():
     try:
         data = requests.post(f"{API}/ai/trending", timeout=120).json()
-        return data.get("output", "(no output)")
-    except Exception as exc:  # noqa: BLE001
-        return f"AI error: {exc}"
+        output = data.get("output", "").strip()
+        return f"<div>{output}</div>" if output else '<p class="empty">Nothing to report right now.</p>'
+    except Exception:
+        return '<p class="empty">Couldn\'t reach AI-Mode. Try again shortly.</p>'
 
 
 if __name__ == "__main__":

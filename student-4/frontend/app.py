@@ -13,47 +13,112 @@ PAGE = """
 <meta charset="utf-8"><title>AI Market Analyst Assistant</title>
 <link rel="stylesheet" href="http://localhost:8080/css/theme.css">
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<style>
+  .ai-forms{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+  .ai-forms form{display:flex;gap:10px;flex-wrap:wrap}
+  #ai-out:empty{display:none}
+</style>
 </head><body>
 <header><h1>AI Market Analyst Assistant</h1>
 <a href="http://localhost:8080/">&larr; Home</a></header>
 <main>
   <section>
     <h2>Markets</h2>
-    <input name="q" placeholder="Search markets..."
-           hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms">
-    <div id="markets" hx-get="/search" hx-trigger="load"></div>
+    <div class="toolbar">
+      <input name="q" placeholder="Search markets..."
+             hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms, load">
+    </div>
+    <div id="markets" class="item-grid"></div>
   </section>
 
   <section>
-    <h2>Saved Analyses</h2>
-    <form hx-post="/analyses/add" hx-target="#analyses" hx-swap="innerHTML">
-      <input name="market_id" placeholder="Market ID" required style="width:90px">
+    <h2>Saved analyses</h2>
+    <form class="add-row" hx-post="/analyses/add" hx-target="#analyses" hx-swap="innerHTML">
+      <input name="market_id" placeholder="Market ID" required style="max-width:110px">
       <select name="verdict">
         <option value="fair">fair</option>
         <option value="overpriced">overpriced</option>
         <option value="underpriced">underpriced</option>
       </select>
-      <input name="summary" placeholder="Summary (optional)" style="width:260px">
-      <button type="submit">Save Analysis</button>
+      <input name="summary" placeholder="Summary (optional)">
+      <button type="submit">Save analysis</button>
     </form>
-    <div id="analyses" hx-get="/analyses-list" hx-trigger="load"></div>
+    <div id="analyses" class="entry-list" hx-get="/analyses-list" hx-trigger="load"></div>
   </section>
 
   <section>
-    <h2>AI Market Analyst</h2>
-    <form hx-post="/ai/analyze-market" hx-target="#ai-out" hx-swap="innerHTML">
-      <input name="market_id" placeholder="Market ID to analyze" required style="width:160px">
-      <button type="submit">Analyze for mispricing</button>
-    </form>
-    <form hx-post="/ai/ask" hx-target="#ai-out" hx-swap="innerHTML">
-      <input name="market_id" placeholder="Market ID (optional)" style="width:160px">
-      <input name="message" placeholder="Ask the AI analyst..." style="width:260px" required>
-      <button type="submit">Ask</button>
-    </form>
-    <div id="ai-out"><pre>Ask a question or analyze a market to see the AI's response and its Plan-Act-Observe-Adapt trace.</pre></div>
+    <h2>Ask the analyst</h2>
+    <div class="panel">
+      <div class="ai-forms">
+        <form hx-post="/ai/analyze-market" hx-target="#ai-out" hx-swap="innerHTML" hx-indicator="#ai-loading">
+          <input name="market_id" placeholder="Market ID to analyze" required style="max-width:180px">
+          <button type="submit">Analyze for mispricing</button>
+        </form>
+        <form hx-post="/ai/ask" hx-target="#ai-out" hx-swap="innerHTML" hx-indicator="#ai-loading">
+          <input name="market_id" placeholder="Market ID (optional)" style="max-width:180px">
+          <input name="message" placeholder="Ask the AI analyst..." required style="flex:1;min-width:200px">
+          <button type="submit">Ask</button>
+        </form>
+      </div>
+      <span id="ai-loading" class="htmx-indicator empty">Thinking&hellip;</span>
+      <div id="ai-out">
+        <p class="empty">Ask a question or analyze a market to see the AI's response and its Plan &rarr; Act &rarr; Observe &rarr; Adapt trace.</p>
+      </div>
+    </div>
   </section>
 </main></body></html>
 """
+
+
+def render_market(r):
+    return f"""
+    <article class="item-card">
+      <div class="item-meta">
+        <span class="pill">{r['category']}</span>
+        <span class="prob">{int(r['current_probability']*100)}%</span>
+      </div>
+      <h3>{r['title']}</h3>
+      <div class="item-sub">id {r['id']}</div>
+    </article>
+    """
+
+
+def render_analyses():
+    try:
+        rows = requests.get(f"{API}/analyses", timeout=10).json()
+    except Exception:
+        rows = []
+
+    if not rows:
+        return '<p class="empty">No saved analyses yet.</p>'
+
+    items = []
+    for r in rows:
+        verdict = r.get("verdict", "fair")
+        options = "".join(
+            f'<option value="{v}" {"selected" if verdict == v else ""}>{v}</option>'
+            for v in ("fair", "overpriced", "underpriced")
+        )
+        items.append(f"""
+        <div class="entry-row">
+          <div class="entry-main">
+            <p class="entry-title">{r['title']}</p>
+            <p class="entry-context">
+              <span class="pill">{verdict}</span>
+              confidence {r.get('confidence', '')}
+              {' &middot; ' + r['summary'] if r.get('summary') else ''}
+            </p>
+          </div>
+          <form class="entry-edit" hx-post="/analyses/{r['id']}/update" hx-target="#analyses" hx-swap="innerHTML">
+            <select name="verdict">{options}</select>
+            <button type="submit">Save</button>
+          </form>
+          <button hx-post="/analyses/{r['id']}/delete" hx-target="#analyses" hx-swap="innerHTML">
+            Remove
+          </button>
+        </div>
+        """)
+    return "".join(items)
 
 
 @app.get("/")
@@ -68,47 +133,9 @@ def search():
         rows = requests.get(f"{API}/markets", params={"q": q}, timeout=10).json()
     except Exception:
         rows = []
-    items = "".join(
-        f"<li><b>{r['title']}</b> (id={r['id']}) — {r['category']} (p={r['current_probability']})</li>"
-        for r in rows
-    )
-    return f"<ul>{items or '<li>No markets.</li>'}</ul>"
-
-
-def render_analyses():
-    try:
-        rows = requests.get(f"{API}/analyses", timeout=10).json()
-    except Exception:
-        rows = []
-
-    items = "".join(
-        f"""
-        <li>
-            <b>{r['title']}</b> — verdict: {r.get('verdict')}
-            | confidence: {r.get('confidence')}
-            <br>{r.get('summary', '')}
-            <form hx-post="/analyses/{r['id']}/update"
-                  hx-target="#analyses"
-                  hx-swap="innerHTML"
-                  style="display:inline">
-                <select name="verdict">
-                    <option value="fair" {"selected" if r.get('verdict') == 'fair' else ''}>fair</option>
-                    <option value="overpriced" {"selected" if r.get('verdict') == 'overpriced' else ''}>overpriced</option>
-                    <option value="underpriced" {"selected" if r.get('verdict') == 'underpriced' else ''}>underpriced</option>
-                </select>
-                <button type="submit">Save</button>
-            </form>
-            <button
-                hx-post="/analyses/{r['id']}/delete"
-                hx-target="#analyses"
-                hx-swap="innerHTML">
-                Remove
-            </button>
-        </li>
-        """
-        for r in rows
-    )
-    return f"<ul>{items or '<li>No saved analyses yet.</li>'}</ul>"
+    if not rows:
+        return '<p class="empty">No markets match your search.</p>'
+    return "".join(render_market(r) for r in rows)
 
 
 @app.get("/analyses-list")
@@ -154,9 +181,10 @@ def ai_analyze_market():
     market_id = request.form.get("market_id")
     try:
         data = requests.post(f"{API}/ai/analyze", json={"market_id": market_id}, timeout=120).json()
-        return f"<pre>{data.get('output', '(no output)')}</pre>"
+        output = data.get("output", "").strip()
+        return f"<div>{output}</div>" if output else '<p class="empty">No output.</p>'
     except Exception as exc:  # noqa: BLE001
-        return f"<pre>AI error: {exc}</pre>"
+        return f'<p class="empty">AI error: {exc}</p>'
 
 
 @app.post("/ai/ask")
@@ -167,9 +195,10 @@ def ai_ask():
     }
     try:
         data = requests.post(f"{API}/ai/chat", json=payload, timeout=120).json()
-        return f"<pre>{data.get('output', '(no output)')}</pre>"
+        output = data.get("output", "").strip()
+        return f"<div>{output}</div>" if output else '<p class="empty">No output.</p>'
     except Exception as exc:  # noqa: BLE001
-        return f"<pre>AI error: {exc}</pre>"
+        return f'<p class="empty">AI error: {exc}</p>'
 
 
 if __name__ == "__main__":
