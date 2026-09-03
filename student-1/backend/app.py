@@ -32,7 +32,7 @@ def list_markets():
     if category:
         sql += " AND category = ?"; params.append(category)
     if q:
-        sql += " AND title LIKE ?"; params.append(f"%{q}%")
+        sql += " AND (title LIKE ? OR category LIKE ?)"; params.extend([f"%{q}%", f"%{q}%"])
     rows = db().execute(sql + " ORDER BY volume DESC", params).fetchall()
     return jsonify([dict(r) for r in rows])
 
