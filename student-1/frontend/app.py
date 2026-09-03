@@ -20,7 +20,7 @@ PAGE = """
   <section>
     <h2>Markets</h2>
     <div class="toolbar">
-      <input name="q" placeholder="Search markets..."
+      <input name="q" placeholder="Search markets or categories..."
              hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms, load">
     </div>
     <div id="markets" class="item-grid"></div>
