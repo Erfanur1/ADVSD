@@ -5,3 +5,5 @@ venv/
 __pycache__/
 *.pyc
 ai-services/shared/market_cache.json
+
+ai-services/agentic-loop/validation_logs/
