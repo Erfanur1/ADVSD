@@ -4,3 +4,4 @@ venv/
 *.db
 __pycache__/
 *.pyc
+ai-services/shared/market_cache.json
