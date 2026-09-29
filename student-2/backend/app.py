@@ -52,14 +52,24 @@ def add_position():
     conn = db()
     cur = conn.execute(
         "INSERT INTO positions (portfolio_id, market_ticker, side, entry_price, size) VALUES (?,?,?,?,?)",
+
         (
             data.get("portfolio_id", 1), 
             data["market_ticker"], 
             data["side"], 
             data["entry_price"], 
             data["size"]
+            
         ),
     )
+
+    yes = data["entry_price"] if data["side"] == "YES" else 1 - data["entry_price"]
+    conn.execute(
+        "INSERT INTO price_history (market_ticker, ts, yes_price) VALUES (?, date('now'), ?)",
+        (data["market_ticker"], yes),
+    )
+        
+    
     conn.commit()
     return jsonify(id=cur.lastrowid), 201
 
@@ -83,6 +93,25 @@ def delete_position(pid):
     conn.commit()
     return jsonify(deleted=pid)
 
+@app.get("/positions/<int:pid>/history")
+def position_history(pid):
+    conn = db()
+    pos = conn.execute("SELECT * FROM positions WHERE id=?", (pid,)).fetchone()
+    if not pos:
+        return jsonify(error="not found"), 404
+    rows = conn.execute(
+        "SELECT ts, yes_price FROM price_history WHERE market_ticker=? ORDER BY ts",
+        (pos["market_ticker"],),
+    ).fetchall()
+    points = []
+    for r in rows:
+        price = r["yes_price"] if pos["side"] == "YES" else 1 - r["yes_price"]
+        points.append({
+            "ts": r["ts"],
+            "price": round(price, 3),
+            "pnl": round((price - pos["entry_price"]) * pos["size"], 2),
+        })
+    return jsonify(position=dict(pos), points=points)
 
 # ---- trade_history: Read ----
 @app.get("/trade-history")
@@ -95,12 +124,12 @@ def list_trade_history():
     return jsonify([dict(r) for r in rows])
 
 
-# ---- AI: risk analysis via shared AI-Mode ----
+
 @app.post("/ai/analyze-risk")
 def ai_analyze_risk():
     trace = []
 
-    # PLAN: decide what data to use as context for the AI
+   
     rows = db().execute("SELECT market_ticker, side, entry_price, size FROM positions").fetchall()
     context = "\n".join(
         f"- {r['size']} shares of {r['market_ticker']} ({r['side']} at ${r['entry_price']})"

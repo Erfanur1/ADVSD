@@ -9,6 +9,7 @@ def client(tmp_path, monkeypatch):
     conn = sqlite3.connect(db_path)
     conn.executescript((base / "schema.sql").read_text())
     conn.executescript((base / "seed.sql").read_text())
+    conn.executescript((base / "price_seed.sql").read_text())
     conn.commit(); conn.close()
     import backend.app as appmod
     importlib.reload(appmod)
@@ -29,6 +30,12 @@ def test_list_positions_seeded(client):
 def test_list_trade_history_seeded(client):
     rows = client.get("/trade-history").get_json()
     assert len(rows) >= 10
+
+def test_position_history(client):
+    r = client.get("/positions/1/history")
+    assert r.status_code == 200
+    assert len(r.get_json()["points"]) == 30
+    assert client.get("/positions/9999/history").status_code == 404
 
 def test_position_crud(client):
     r = client.post("/positions", json={

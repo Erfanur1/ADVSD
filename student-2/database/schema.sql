@@ -22,3 +22,10 @@ CREATE TABLE IF NOT EXISTS trade_history (
     price REAL,
     FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS price_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    market_ticker TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    yes_price REAL NOT NULL
+);
