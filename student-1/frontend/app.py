@@ -20,7 +20,7 @@ PAGE = """
   <section>
     <h2>Markets</h2>
     <div class="toolbar">
-      <input name="q" placeholder="Search markets..."
+      <input name="q" placeholder="Search markets or categories..."
              hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms, load">
     </div>
     <div id="markets" class="item-grid"></div>
@@ -35,6 +35,26 @@ PAGE = """
       <button type="submit">Add to watchlist</button>
     </form>
     <div id="watchlist" class="entry-list" hx-get="/watchlist-list" hx-trigger="load"></div>
+  </section>
+
+  <section>
+    <h2>Live market search (MCP)</h2>
+    <div class="panel">
+      <input name="mcpq" placeholder="Search live markets (e.g. election)" id="mcp-input">
+      <button hx-post="/mcp-search" hx-include="#mcp-input" hx-target="#mcp-out" hx-indicator="#mcp-loading">Search Live</button>
+      <span id="mcp-loading" class="htmx-indicator empty">Searching&hellip;</span>
+      <div id="mcp-out"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ask a grounded question (RAG)</h2>
+    <div class="panel">
+      <input name="ragq" placeholder="e.g. What's driving sentiment in election markets?" id="rag-input" style="width:60%">
+      <button hx-post="/rag-ask" hx-include="#rag-input" hx-target="#rag-out" hx-indicator="#rag-loading">Ask</button>
+      <span id="rag-loading" class="htmx-indicator empty">Thinking&hellip;</span>
+      <div id="rag-out"></div>
+    </div>
   </section>
 
   <section>
@@ -167,6 +187,51 @@ def ai():
         return f"<div>{output}</div>" if output else '<p class="empty">Nothing to report right now.</p>'
     except Exception:
         return '<p class="empty">Couldn\'t reach AI-Mode. Try again shortly.</p>'
+
+
+@app.post("/mcp-search")
+def mcp_search():
+    query = request.form.get("mcpq", "")
+    try:
+        data = requests.post(f"{API}/mcp/search", json={"query": query}, timeout=20).json()
+        markets = data.get("markets", [])
+    except Exception:
+        markets = []
+    if not markets:
+        return '<p class="empty">No live results (check MCP server is running, or try a different search).</p>'
+    items = "".join(
+        f'<article class="item-card"><div class="item-meta">'
+        f'<span class="pill">{m.get("source","")}</span>'
+        f'<span class="prob">{int(m.get("probability",0)*100)}%</span>'
+        f'</div><h3>{m.get("title","")}</h3></article>'
+        for m in markets
+    )
+    return items
+
+
+@app.post("/rag-ask")
+def rag_ask():
+    question = request.form.get("ragq", "")
+    try:
+        data = requests.post(f"{API}/rag/ask", json={"question": question}, timeout=60).json()
+    except Exception:
+        return '<p class="empty">Couldn\'t reach the RAG service. Try again shortly.</p>'
+
+    answer = data.get("answer", "")
+    citations = data.get("citations", [])
+    confidence = data.get("confidence", "Low")
+    insufficient = data.get("insufficient_context", True)
+
+    citation_html = "".join(f"<li>[{c.get('source','')}] {c.get('excerpt','')}</li>" for c in citations)
+    badge = "insufficient-context" if insufficient else f"confidence-{confidence.lower()}"
+
+    return f"""
+    <div class="rag-answer">
+      <p>{answer}</p>
+      <p class="pill {badge}">Confidence: {confidence}{' (insufficient context)' if insufficient else ''}</p>
+      {f'<ul class="citations">{citation_html}</ul>' if citation_html else ''}
+    </div>
+    """
 
 
 if __name__ == "__main__":

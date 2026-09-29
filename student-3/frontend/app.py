@@ -53,8 +53,8 @@ PAGE = """
   .sr-tags { display: flex; gap: 6px; flex-wrap: wrap; }
   .sr-tag { font-size: .74rem; color: var(--accent); border: 1px solid var(--line); border-radius: 999px;
             padding: 1px 8px; }
-  .sr-note-edit { display: flex; gap: 8px; align-items: center; }
-  .sr-note-edit input { width: 180px; }
+  .sr-note-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sr-note-edit input { width: 140px; }
   .sr-note-edit button, .sr-note > button { font-size: .82rem; padding: 6px 12px; }
 
   .sr-briefing-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -135,6 +135,9 @@ def render_article(r):
 def render_note(r):
     tags = [t.strip() for t in (r.get("tags") or "").split(",") if t.strip()]
     tag_html = "".join(f'<span class="sr-tag">{t}</span>' for t in tags)
+    title_val = (r.get("title") or "").replace('"', "&quot;")
+    tags_val = (r.get("tags") or "").replace('"', "&quot;")
+    content_val = (r.get("content") or "").replace('"', "&quot;")
     return f"""
     <div class="sr-note">
       <div class="sr-note-main">
@@ -143,7 +146,9 @@ def render_note(r):
         <div class="sr-tags">{tag_html}</div>
       </div>
       <form class="sr-note-edit" hx-post="/notes/{r['id']}/update" hx-target="#notes" hx-swap="innerHTML">
-        <input name="content" placeholder="Note content" value="{r.get('content', '')}">
+        <input name="title" placeholder="Title" value="{title_val}">
+        <input name="content" placeholder="Note content" value="{content_val}">
+        <input name="tags" placeholder="tags, comma, separated" value="{tags_val}">
         <button type="submit">Save</button>
       </form>
       <button hx-post="/notes/{r['id']}/delete" hx-target="#notes" hx-swap="innerHTML">
@@ -217,7 +222,11 @@ def notes_delete(nid):
 
 @app.post("/notes/<int:nid>/update")
 def notes_update(nid):
-    payload = {"content": request.form.get("content", "")}
+    payload = {
+        "title": request.form.get("title", ""),
+        "content": request.form.get("content", ""),
+        "tags": request.form.get("tags", ""),
+    }
     try:
         requests.put(f"{API}/notes/{nid}", json=payload, timeout=10)
     except Exception:
