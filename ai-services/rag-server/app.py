@@ -58,6 +58,72 @@ def load_knowledge_base():
     ]
 
 
+# ---------------- Student 2: Portfolio & Position Tracker knowledge ----------------
+# Live entries built from the student-2 backend (read-only GETs), in the same
+# {id, market_keywords, text, source} shape as the knowledge base above.
+PORTFOLIO_API_URL = os.getenv("PORTFOLIO_API_URL", "http://localhost:5002")
+_GENERIC_TICKER_PARTS = {"pol", "yes", "no", "up", "down"}
+
+
+def _ticker_keywords(ticker):
+    t = ticker.lower()
+    parts = [x for x in t.split("-") if x.isalpha() and len(x) >= 3 and x not in _GENERIC_TICKER_PARTS]
+    return [t] + parts
+
+
+def load_portfolio_entries():
+    """Returns [] if the portfolio service is down, so RAG keeps working."""
+    try:
+        positions = requests.get(f"{PORTFOLIO_API_URL}/positions", timeout=10).json()
+        trades = requests.get(f"{PORTFOLIO_API_URL}/trade-history", timeout=10).json()
+    except (requests.RequestException, ValueError):
+        return []
+
+    entries, by_cat = [], {}
+    for p in positions:
+        ticker = p["market_ticker"]
+        cost = p["entry_price"] * p["size"]
+        by_cat[ticker.split("-")[0]] = by_cat.get(ticker.split("-")[0], 0) + cost
+        text = (f"Portfolio position {ticker} {p['side']} ({p.get('portfolio_name', '')}): "
+                f"{p['size']} contracts bought at ${p['entry_price']} (cost ${cost:.2f}, max payout ${p['size']}).")
+        try:
+            pts = requests.get(f"{PORTFOLIO_API_URL}/positions/{p['id']}/history", timeout=10).json().get("points", [])
+        except (requests.RequestException, ValueError):
+            pts = []
+        if len(pts) >= 2:
+            first, last = pts[0], pts[-1]
+            prices = [x["price"] for x in pts]
+            move = "up" if last["price"] > first["price"] else "down" if last["price"] < first["price"] else "flat"
+            text += (f" Price moved {move} from {first['price']} on {first['ts']} to {last['price']} on {last['ts']}"
+                     f" (low {min(prices)}, high {max(prices)}); unrealised P&L ${last['pnl']}.")
+        t_lines = [f"{t['trade_type']} {t['shares']} @ ${t['price']}" for t in trades if t["market_ticker"] == ticker]
+        if t_lines:
+            text += " Trades: " + ", ".join(t_lines) + "."
+        entries.append({"id": f"portfolio:position#{p['id']}", "market_keywords": _ticker_keywords(ticker),
+                        "text": text, "source": "student-2-portfolio"})
+
+    total = sum(by_cat.values())
+    if total:
+        split = ", ".join(f"{c} ${v:.2f} ({v / total:.0%})" for c, v in sorted(by_cat.items(), key=lambda kv: -kv[1]))
+        holdings = "; ".join(f"{p['market_ticker']} {p['side']} x{p['size']} @ ${p['entry_price']}" for p in positions)
+        entries.append({"id": "portfolio:exposure-summary",
+                        "market_keywords": ["portfolio", "position", "holding", "exposure", "concentrat",
+                                            "diversif", "risk", "evaluate", "my bets"],
+                        "text": (f"Portfolio exposure: {len(positions)} open positions, total cost ${total:.2f}. "
+                                 f"By category: {split}. Holdings: {holdings}."),
+                        "source": "student-2-portfolio"})
+
+    if positions:
+        latest = max(positions, key=lambda p: p["id"])
+        entries.append({"id": f"portfolio:latest-position#{latest['id']}",
+                        "market_keywords": ["new position", "latest", "recent", "newest", "just added",
+                                            "last trade", "just bought", "new trade"],
+                        "text": (f"Most recently opened position: {latest['market_ticker']} {latest['side']}, "
+                                 f"{latest['size']} contracts at ${latest['entry_price']} "
+                                 f"(cost ${latest['entry_price'] * latest['size']:.2f}, max payout ${latest['size']})."),
+                        "source": "student-2-portfolio"})
+    return entries
+
 def retrieve_context(question, market_id=None, source="both", top_k=3):
     """
     Very simple keyword-overlap retrieval (sufficient for Release 1).
@@ -65,7 +131,7 @@ def retrieve_context(question, market_id=None, source="both", top_k=3):
     matched live market data as additional grounding context.
     """
     q_lower = question.lower()
-    kb = load_knowledge_base()
+    kb = load_knowledge_base() + load_portfolio_entries()
     scored = []
     for entry in kb:
         overlap = sum(1 for kw in entry["market_keywords"] if kw in q_lower)
