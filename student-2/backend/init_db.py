@@ -14,7 +14,6 @@ if count == 0:
     print("seeded")
 else:
     print(f"already has {count} portfolios; skipping seed")
-    
 if conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0] == 0:
     conn.executescript((HERE / "price_seed.sql").read_text())
     print("seeded price history")

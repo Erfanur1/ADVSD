@@ -14,6 +14,10 @@ on:
 jobs:
   build-and-validate:
     runs-on: ubuntu-latest
+    env:
+      # Release 1: MCP + RAG integration is retained but disabled in CI/CD
+      MCP_ENABLED: "false"
+      RAG_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +32,9 @@ jobs:
       - name: Install frontend dependencies
         run: pip install -r "student-2/frontend/requirements.txt"
 
+      - name: Install test dependencies
+        run: pip install pytest
+
       - name: Syntax check (compile all Python files)
         run: |
           python -m py_compile "student-2/backend/app.py"
@@ -41,3 +48,18 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t student-2-image "./student-2"
+
+      - name: Smoke test container with MCP/RAG disabled
+        run: |
+          docker run -d --name s2 -p 5002:5002 -e DB_PATH=/tmp/s2.db \
+            -e MCP_ENABLED=false -e RAG_ENABLED=false student-2-image
+          for i in $(seq 1 20); do curl -sf http://localhost:5002/health && break; sleep 1; done
+          echo; echo "--- MCP (expect disabled) ---"
+          curl -s -X POST http://localhost:5002/mcp/execute -H 'Content-Type: application/json' \
+            -d '{"tool":"validate_portfolio","parameters":{"portfolio_id":1}}' | tee mcp.json
+          grep -q '"disabled"' mcp.json
+          echo; echo "--- RAG (expect disabled) ---"
+          curl -s -X POST http://localhost:5002/rag/ask -H 'Content-Type: application/json' \
+            -d '{"query":"test"}' | tee rag.json
+          grep -q '"disabled"' rag.json
+          docker rm -f s2
