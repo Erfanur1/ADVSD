@@ -48,8 +48,8 @@ services:
     environment:
       DB_PATH: /data/student2.db
       AI_MODE_URL: http://ai-mode:8000
-      MCP_SERVER_URL: http://host.docker.internal:8001
-      RAG_SERVER_URL: http://host.docker.internal:8002
+      MCP_SERVER_URL: http://host.docker.internal:8100
+      RAG_SERVER_URL: http://host.docker.internal:8200
     volumes: ["s2data:/data"]
     ports: ["5002:5002"]
     depends_on: [ai-mode]
