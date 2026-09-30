@@ -50,8 +50,8 @@ def tool_search_markets(params):
 
 
 def tool_get_market_history(params):
-    # Neither Polymarket's nor Manifold's free-tier endpoints reliably
-    # expose full history without extra calls; this tool returns the
+    # Neither Polymarket's nor Kalshi's public endpoints expose a full
+    # history without extra per-market calls; this tool returns the
     # current snapshot as a single-point "history" for now, with a
     # clear note, rather than fabricating data.
     market_id = params.get("market_id")
@@ -184,15 +184,15 @@ def tool_get_exposure_summary(params):
 TOOLS = {
     "get_market_price": {
         "handler": tool_get_market_price,
-        "input_schema": {"market_id": "string (required)", "source": "polymarket|manifold|both (optional)"},
+        "input_schema": {"market_id": "string (required)", "source": "polymarket|kalshi|both (optional)"},
     },
     "search_markets": {
         "handler": tool_search_markets,
-        "input_schema": {"query": "string (optional)", "category": "string (optional)", "source": "polymarket|manifold|both (optional)"},
+        "input_schema": {"query": "string (optional)", "category": "string (optional)", "source": "polymarket|kalshi|both (optional)"},
     },
     "get_market_history": {
         "handler": tool_get_market_history,
-        "input_schema": {"market_id": "string (required)", "source": "polymarket|manifold|both (optional)"},
+        "input_schema": {"market_id": "string (required)", "source": "polymarket|kalshi|both (optional)"},
     },
     "log_analysis_note": {
         "handler": tool_log_analysis_note,
