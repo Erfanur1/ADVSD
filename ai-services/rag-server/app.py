@@ -168,7 +168,7 @@ def health():
 @app.post("/rag/query")
 def rag_query():
     """
-    Body: {"question": "...", "market_id": "<optional>", "source": "polymarket|manifold|both"}
+    Body: {"question": "...", "market_id": "<optional>", "source": "polymarket|kalshi|both"}
     Returns: {"answer", "citations": [...], "confidence", "insufficient_context": bool}
     """
     body = request.get_json(force=True) or {}
@@ -233,4 +233,5 @@ def rag_query():
 
 
 if __name__ == "__main__":
+    market_data.warm_up()  # index Kalshi's open events in the background
     app.run(host="0.0.0.0", port=PORT)
