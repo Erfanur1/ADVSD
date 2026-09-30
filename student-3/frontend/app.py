@@ -16,6 +16,7 @@ PAGE = """
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Market Research Notes &amp; News Feed</title>
 <link rel="stylesheet" href="http://localhost:8080/css/theme.css">
+<script src="http://localhost:8080/js/nav.js" defer></script>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <style>
   /* Page-specific styling built on the shared theme's tokens (--bg, --panel, --ink,

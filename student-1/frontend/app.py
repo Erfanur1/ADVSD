@@ -12,6 +12,7 @@ PAGE = """
 <!doctype html><html><head>
 <meta charset="utf-8"><title>Market Watchlist & Discovery</title>
 <link rel="stylesheet" href="http://localhost:8080/css/theme.css">
+<script src="http://localhost:8080/js/nav.js" defer></script>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head><body>
 <header><h1>Market Watchlist &amp; Discovery</h1>

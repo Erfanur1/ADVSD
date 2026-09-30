@@ -15,6 +15,7 @@ PAGE = """
     <meta charset="utf-8">
     <title>Portfolio & Position Tracker</title>
     <link rel="stylesheet" href="http://localhost:8080/css/theme.css">
+    <script src="http://localhost:8080/js/nav.js" defer></script>
     <style>
       form input, form select { flex: 1 1 0; min-width: 0; margin: 0; }
       form select { flex: 0 0 90px; }
@@ -24,7 +25,7 @@ PAGE = """
       .row select { flex: 0 0 220px; }
       .row button { flex: 0 0 auto; white-space: nowrap; }
       .result { margin-top: 15px; }
-      .ok { color: #4ade80; } .warn { color: #facc15; } .err { color: #f87171; }
+      .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
       .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 8px 0; }
       .cite { font-size: 0.9em; opacity: 0.85; margin-bottom: 6px; }
       .trace li { margin-bottom: 4px; }
