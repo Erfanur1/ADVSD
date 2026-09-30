@@ -34,6 +34,18 @@ POLY_SEARCH = {"events": [{
                  "volume": "9999999", "closed": False}],
 }]}
 
+KALSHI_SERIES = {"series": [
+    {"ticker": "KXBTC", "title": "Bitcoin price", "category": "Crypto", "tags": ["BTC"]},
+    {"ticker": "KXFEDDECISION", "title": "Fed decision", "category": "Economics", "tags": []},
+    {"ticker": "KXMVECROSS", "title": "Bitcoin combo parlay", "category": "Sports", "tags": []},
+]}
+
+KALSHI_FED = {"events": [
+    {"event_ticker": "KXFEDDECISION-26OCT", "title": "Fed decision in Oct 2026?", "category": "Economics",
+     "markets": [{"ticker": "KXFEDDECISION-26OCT-H0", "yes_sub_title": "Fed maintains rate", "status": "active",
+                  "yes_bid_dollars": "0.66", "yes_ask_dollars": "0.67", "last_price_dollars": "0.66"}]},
+]}
+
 KALSHI_EVENTS = {"cursor": "", "events": [
     {"event_ticker": "KXBTC-26", "title": "Bitcoin price at end of 2026", "category": "Crypto",
      "markets": [{"ticker": "KXBTC-26-150K", "yes_sub_title": "Above $150k", "status": "active",
@@ -50,15 +62,34 @@ KALSHI_EVENTS = {"cursor": "", "events": [
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
     monkeypatch.setattr(md, "CACHE_PATH", str(tmp_path / "cache.json"))
-    md._kalshi_catalog.update(ts=0.0, markets=[])
+    md._kalshi_series.update(ts=0.0, items=[])
+    md._kalshi_index.update(ts=0.0, events=[], building=False)
+    md._kalshi_seen.clear()
+    monkeypatch.setattr(md, "warm_up", lambda: None)  # no background threads in tests
     calls = []
 
     def fake_get(url, params=None, timeout=None):
         calls.append(url)
         if url == md.POLYMARKET_SEARCH_URL:
             return FakeResp(POLY_SEARCH)
+        if url == f"{md.KALSHI_API_URL}/series":
+            return FakeResp(KALSHI_SERIES)
+        if url == f"{md.KALSHI_API_URL}/events" and "with_nested_markets" not in (params or {}):
+            # index build: two pages of titles only
+            page2 = (params or {}).get("cursor") == "p2"
+            evs = KALSHI_FED["events"] if page2 else KALSHI_EVENTS["events"]
+            return FakeResp({"cursor": "" if page2 else "p2",
+                             "events": [{k: v for k, v in e.items() if k != "markets"} for e in evs]})
         if url == f"{md.KALSHI_API_URL}/events":
-            return FakeResp(KALSHI_EVENTS)
+            series = (params or {}).get("series_ticker")
+            return FakeResp(KALSHI_FED if series == "KXFEDDECISION" else
+                            KALSHI_EVENTS if series in (None, "KXBTC") else {"events": []})
+        if url.startswith(f"{md.KALSHI_API_URL}/events/"):
+            ticker = url.rsplit("/", 1)[1]
+            for e in KALSHI_FED["events"] + KALSHI_EVENTS["events"]:
+                if e["event_ticker"] == ticker:
+                    return FakeResp({"event": {k: v for k, v in e.items() if k != "markets"},
+                                     "markets": e["markets"]})
         if url == f"{md.POLYMARKET_MARKETS_URL}/101":
             return FakeResp(POLY_SEARCH["events"][0]["markets"][0])
         return FakeResp({}, status=404)
@@ -70,6 +101,13 @@ def offline(monkeypatch, tmp_path):
 def test_keywords_drop_filler_words():
     assert md.keywords("What is driving sentiment in election markets right now?") == ["election"]
     assert md.keywords("Fed rate cuts") == ["fed", "rate", "cut"]
+
+
+def test_month_names_match_both_spellings():
+    assert md.keywords("fed decision October 2026") == ["fed", "decision", "oct", "2026"]
+    assert md.keywords("October", shorten_months=False) == ["october"]
+    markets, _ = md.fetch_markets(source="kalshi", query="Fed decision October 2026")
+    assert [m["id"] for m in markets] == ["KXFEDDECISION-26OCT-H0"]
 
 
 def test_search_returns_both_sources_and_drops_unrelated():
@@ -96,15 +134,36 @@ def test_no_relevant_market_returns_nothing():
     assert markets == [] and meta["source"] == "none"
 
 
-def test_kalshi_catalog_is_cached(offline):
+def test_kalshi_event_index_search(offline):
+    md.refresh_kalshi_index()
+    assert [e["ticker"] for e in md._kalshi_index["events"]] == ["KXBTC-26", "KXFEDDECISION-26OCT"]  # combo skipped
+    offline.clear()
+    markets, _ = md.fetch_markets(source="kalshi", query="fed decision october")
+    assert [m["id"] for m in markets] == ["KXFEDDECISION-26OCT-H0"]
+    assert offline == [f"{md.KALSHI_API_URL}/events/KXFEDDECISION-26OCT"]  # only the matching event fetched
+
+
+def test_kalshi_index_keeps_previous_copy_when_kalshi_down(monkeypatch):
+    md.refresh_kalshi_index()
+    before = list(md._kalshi_index["events"])
+
+    def down(*a, **k):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr(md.requests, "get", down)
+    md.refresh_kalshi_index()
+    assert md._kalshi_index["events"] == before and not md._kalshi_index["building"]
+
+
+def test_kalshi_series_list_is_cached(offline):
     md.fetch_markets(source="kalshi", query="bitcoin")
-    md.fetch_markets(source="kalshi", query="bitcoin")
-    assert offline.count(f"{md.KALSHI_API_URL}/events") == 1
+    md.fetch_markets(source="kalshi", query="fed decision")
+    assert offline.count(f"{md.KALSHI_API_URL}/series") == 1
 
 
 def test_falls_back_to_cache_when_upstream_down(monkeypatch):
     fresh, _ = md.fetch_markets(query="bitcoin")
-    md._kalshi_catalog.update(ts=0.0, markets=[])
+    md._kalshi_series.update(ts=0.0, items=[])
 
     def down(*a, **k):
         raise requests.ConnectionError("offline")
@@ -116,7 +175,7 @@ def test_falls_back_to_cache_when_upstream_down(monkeypatch):
 
 def test_get_market_by_id_routes_by_format():
     assert md.get_market_by_id("101")[0]["source"] == "polymarket"
-    md.fetch_markets(source="kalshi")  # warm catalog
+    md.fetch_markets(source="kalshi", query="bitcoin")  # seen in a search -> no extra call
     assert md.get_market_by_id("KXBTC-26-150K")[0]["source"] == "kalshi"
     assert md.get_market_by_id("999")[0] is None
 

@@ -245,4 +245,5 @@ def call_tool():
 
 
 if __name__ == "__main__":
+    market_data.warm_up()  # index Kalshi's open events in the background
     app.run(host="0.0.0.0", port=PORT)
