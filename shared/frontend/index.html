@@ -4,47 +4,60 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prediction Market Intelligence Hub</title>
-<link rel="stylesheet" href="/css/theme.css">
+<link rel="stylesheet" href="/css/theme.css?v=r1">
+<script src="/js/nav.js?v=r1" defer></script>
 </head>
 <body>
-<div class="topbar">
-  <div class="brand"><span class="dot"></span> Prediction Market Intelligence Hub</div>
-  <nav>
-    <a href="http://localhost:5101/">Watchlist</a>
-    <a href="http://localhost:5102/">Portfolio</a>
-    <a href="http://localhost:5103/">Research</a>
-    <a href="http://localhost:5104/">AI Analyst</a>
-  </nav>
-</div>
 
 <div class="hero">
-  <div class="live"><span class="dot"></span> Agentic AI &middot; Release 0</div>
-  <h1>Track, research, and analyse prediction markets</h1>
-  <p>Four AI-assisted modules covering discovery, portfolio tracking, research, and market analysis — all backed by a local open-source LLM.</p>
+  <div>
+    <div class="eyebrow">Agentic AI &middot; Release 1</div>
+    <h1>Track, research and analyse<br>prediction markets.</h1>
+    <p>Four AI-assisted features over live Polymarket and Kalshi data, backed by a local open-source LLM
+       and shared MCP and RAG services.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="label">Features</div><div class="value">4</div><div class="sub">microservices</div></div>
+    <div class="stat"><div class="label">Exchanges</div><div class="value">2</div><div class="sub">Polymarket &middot; Kalshi</div></div>
+    <div class="stat"><div class="label">Shared AI services</div><div class="value">3</div><div class="sub">AI-Mode &middot; MCP &middot; RAG</div></div>
+  </div>
 </div>
 
-<main class="grid">
-  <a class="card" href="http://localhost:5101/">
-    <div class="status"><span class="dot"></span> Live</div>
-    <h2>Market Watchlist &amp; Discovery</h2>
-    <p>Browse and search markets by category; keep a personal watchlist.</p>
-  </a>
-  <a class="card" href="http://localhost:5102/">
-    <div class="status"><span class="dot"></span> Live</div>
-    <h2>Portfolio &amp; Position Tracker</h2>
-    <p>Log positions and track P&amp;L and exposure by category.</p>
-  </a>
-  <a class="card" href="http://localhost:5103/">
-    <div class="status"><span class="dot"></span> Live</div>
-    <h2>Research Notes &amp; News Feed</h2>
-    <p>Attach notes and evidence to markets; browse linked news.</p>
-  </a>
-  <a class="card" href="http://localhost:5104/">
-    <div class="status"><span class="dot"></span> Live</div>
-    <h2>AI Market Analyst Assistant</h2>
-    <p>AI chat that explains prices and flags mispriced markets.</p>
-  </a>
+<main>
+  <h2>Features</h2>
+  <div class="grid">
+    <a class="card" href="http://localhost:5101/" data-port="5101">
+      <div class="status"><i class="dot"></i><span>Checking&hellip;</span></div>
+      <h2>Market Watchlist &amp; Discovery</h2>
+      <p>Browse and search markets by category; keep a personal watchlist.</p>
+    </a>
+    <a class="card" href="http://localhost:5102/" data-port="5102">
+      <div class="status"><i class="dot"></i><span>Checking&hellip;</span></div>
+      <h2>Portfolio &amp; Position Tracker</h2>
+      <p>Log positions and track P&amp;L and exposure by category.</p>
+    </a>
+    <a class="card" href="http://localhost:5103/" data-port="5103">
+      <div class="status"><i class="dot"></i><span>Checking&hellip;</span></div>
+      <h2>Research Notes &amp; News Feed</h2>
+      <p>Attach notes and evidence to markets; browse linked news.</p>
+    </a>
+    <a class="card" href="http://localhost:5104/" data-port="5104">
+      <div class="status"><i class="dot"></i><span>Checking&hellip;</span></div>
+      <h2>AI Market Analyst Assistant</h2>
+      <p>Compare Polymarket and Kalshi prices to flag mispriced markets, with cited AI explanations.</p>
+    </a>
+  </div>
 </main>
-<footer><small>41026 Advanced Software Development &middot; Release 0</small></footer>
+<footer>41026 Advanced Software Development &middot; Release 1</footer>
+
+<script>
+  // Mark each feature card Online/Offline (reachability only; see nav.js).
+  document.querySelectorAll(".card[data-port]").forEach(function (card) {
+    var dot = card.querySelector(".dot"), label = card.querySelector(".status span");
+    fetch("http://" + location.hostname + ":" + card.dataset.port + "/", { mode: "no-cors", cache: "no-store" })
+      .then(function () { dot.className = "dot up"; label.textContent = "Online"; })
+      .catch(function () { dot.className = "dot down"; label.textContent = "Offline"; });
+  });
+</script>
 </body>
 </html>

@@ -14,7 +14,8 @@ PAGE = """
 <!doctype html><html><head>
 <meta charset="utf-8"><title>AI Market Analyst Assistant</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="http://localhost:8080/css/theme.css">
+<link rel="stylesheet" href="http://localhost:8080/css/theme.css?v=r1">
+<script src="http://localhost:8080/js/nav.js?v=r1" defer></script>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <style>
   .ai-forms{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
@@ -27,36 +28,39 @@ PAGE = """
   .pair-grid h3{margin:0 0 8px;font-size:.95rem}
   .pick{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--line);
         border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:.88rem}
-  .pick:hover{border-color:var(--accent)}
+  .pick:hover{border-color:var(--line-strong);background:var(--panel-raised)}
+  .pick:has(input:checked){border-color:var(--accent);background:var(--panel-raised)}
   .pick input{margin-top:3px;width:auto;flex:0 0 auto}
   .pick .num{color:var(--muted);font-size:.8rem}
+  .picks{max-height:340px;overflow-y:auto;padding-right:4px}
+  .compare-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+  .compare-head .direction{color:var(--muted);font-size:.9rem}
+  .price-grid{display:grid;grid-template-columns:1fr 1fr .8fr;gap:12px}
+  @media (max-width:760px){.price-grid{grid-template-columns:1fr}}
+  .price-card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--panel)}
+  .price-card.gap{background:var(--panel-raised)}
+  .price-card .label{font-size:.75rem;color:var(--muted);font-weight:500}
+  .price-card .price{font-size:1.6rem;font-weight:600;letter-spacing:-.02em;margin:4px 0 2px}
+  .price-card .sub{font-size:.78rem;color:var(--muted)}
+  .price-card .market{font-size:.84rem;margin:10px 0 6px;line-height:1.4}
   .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:8px 0;font-size:.9rem}
   .status{display:inline-block;padding:2px 10px;border-radius:999px;font-weight:700;font-size:.8rem;
           text-transform:uppercase;letter-spacing:.04em}
-  .status.mispriced{background:#f87171;color:#1a0606}
-  .status.watch{background:var(--accent);color:var(--accent-ink)}
-  .status.fair{background:#4ade80;color:#06170c}
-  .conf-High{color:#4ade80}.conf-Medium{color:var(--accent)}.conf-Low{color:#f87171}
-  .warn{color:var(--accent)}.err{color:#f87171}.ok{color:#4ade80}
+  .status.mispriced{background:var(--err-soft);color:var(--err)}
+  .status.watch{background:var(--warn-soft);color:var(--warn)}
+  .status.fair{background:var(--ok-soft);color:var(--ok)}
+  .conf-High{color:var(--ok)}.conf-Medium{color:var(--warn)}.conf-Low{color:var(--err)}
   .cite{font-size:.85rem;margin-bottom:6px}
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
   details.trace{margin-top:10px;font-size:.85rem}
   details.trace li{margin-bottom:3px}
   .result{margin-top:12px}
+  .result:empty{display:none}
 </style>
 </head><body>
 <header><h1>AI Market Analyst Assistant</h1>
 <a href="http://localhost:8080/">&larr; Home</a></header>
 <main>
-  <section>
-    <h2>Markets</h2>
-    <div class="toolbar">
-      <input name="q" placeholder="Search markets..."
-             hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms, load">
-    </div>
-    <div id="markets" class="item-grid"></div>
-  </section>
-
   <section>
     <h2>Cross-exchange mispricing</h2>
     <div class="panel">
@@ -121,6 +125,14 @@ PAGE = """
         <p class="empty">Ask a question or analyze a market to see the AI's response and its Plan &rarr; Act &rarr; Observe &rarr; Adapt trace.</p>
       </div>
     </div>
+  </section>
+  <section>
+    <h2>Stored markets</h2>
+    <div class="toolbar">
+      <input name="q" placeholder="Search markets..."
+             hx-get="/search" hx-target="#markets" hx-trigger="keyup changed delay:300ms, load">
+    </div>
+    <div id="markets" class="item-grid"></div>
   </section>
 </main></body></html>
 """
@@ -304,7 +316,7 @@ def render_pick_list(data, field, label):
           <span class="num">{pct(m.get('probability'))} &middot; bid {cents(m.get('yes_bid'))} / ask {cents(m.get('yes_ask'))}</span>
         </span>
       </label>""" for m in rows)
-    return f"<div><h3>{label}</h3>{picks}</div>"
+    return f'<div><h3>{label}</h3><div class="picks">{picks}</div></div>'
 
 
 @app.post("/mispricing/search")
@@ -328,14 +340,12 @@ def mispricing_search():
 
 def render_side(m, name):
     return f"""
-      <div>
-        <h3>{name}</h3>
-        <p>{escape(m['title'])}</p>
-        <div class="kv">
-          <span>Probability</span><span>{pct(m.get('probability'))}</span>
-          <span>Bid / ask</span><span>{cents(m.get('yes_bid'))} / {cents(m.get('yes_ask'))}</span>
-          <span>Id</span><span><code>{escape(m['id'])}</code></span>
-        </div>
+      <div class="price-card">
+        <div class="label">{name} &middot; YES</div>
+        <div class="price">{pct(m.get('probability'))}</div>
+        <div class="sub">bid {cents(m.get('yes_bid'))} &middot; ask {cents(m.get('yes_ask'))}</div>
+        <p class="market">{escape(m['title'])}</p>
+        <code>{escape(m['id'])}</code>
       </div>"""
 
 
@@ -349,23 +359,29 @@ def mispricing_compare():
 
     res = data["result"]
     poly, kalshi, c = res["polymarket"], res["kalshi"], res["comparison"]
-    edge = (f"<span>Edge after spread</span><span>{c['edge_after_spread'] * 100:.1f} pts</span>"
-            if c["status"] == "mispriced" else "")
+    edge = (f"edge after spread {c['edge_after_spread'] * 100:.1f} pts"
+            if c["status"] == "mispriced" else "books overlap")
     # State the measured result so the model explains the real comparison instead of assuming a gap.
     question = (f"Polymarket prices \"{poly['title']}\" at {poly['probability']:.1%} and Kalshi prices the same "
                 f"event at {kalshi['probability']:.1%}: {c['abs_gap_points']} points apart, rated {c['status']}. "
                 f"Using only the sources, explain what this comparison shows and what could cause any difference.")
     return f"""
-      <p><span class="status {escape(c['status'])}">{escape(c['status'])}</span>
-         &nbsp;{escape(c['direction'])}</p>
-      <div class="kv">
-        <span>Gap</span><span>{escape(c['abs_gap_points'])} pts</span>
-        {edge}
-        <span>Basis</span><span>{escape(c['basis'])}</span>
+      <div class="compare-head">
+        <span class="status {escape(c['status'])}">{escape(c['status'])}</span>
+        <span class="direction">{escape(c['direction'])}</span>
       </div>
-      <div class="pair-grid">{render_side(poly, 'Polymarket')}{render_side(kalshi, 'Kalshi')}</div>
+      <div class="price-grid">
+        {render_side(poly, 'Polymarket')}
+        {render_side(kalshi, 'Kalshi')}
+        <div class="price-card gap">
+          <div class="label">Gap</div>
+          <div class="price">{escape(c['abs_gap_points'])} pts</div>
+          <div class="sub">{edge}</div>
+          <p class="market">Compared on {escape(c['basis'])}.</p>
+        </div>
+      </div>
       <div class="actions">
-        <button hx-post="/mispricing/save" hx-vals="{escape(json.dumps(params))}"
+        <button class="primary" hx-post="/mispricing/save" hx-vals="{escape(json.dumps(params))}"
                 hx-target="#save-status" hx-swap="innerHTML">Save as analysis</button>
         <button hx-post="/rag/ask" hx-vals="{escape(json.dumps({'query': question, 'market_ids': poly['id'] + ',' + kalshi['id']}))}"
                 hx-target="#rag-out" hx-swap="innerHTML" hx-indicator="#rag-loading"
