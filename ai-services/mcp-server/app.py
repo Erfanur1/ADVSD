@@ -181,6 +181,60 @@ def tool_get_exposure_summary(params):
     }}, 200
 
 
+# ---------------- Student 4: AI Market Analyst -- cross-exchange mispricing ----------------
+# Boundary: READ-ONLY. Takes exactly one Polymarket market and one Kalshi
+# market (ids are format-checked by market_data before any URL is built),
+# fetches both live, and compares them. Nothing is written anywhere.
+WATCH_GAP = 0.05  # midpoint gap (5 points) worth flagging even when the books overlap
+
+
+def compare_prices(poly, kalshi):
+    """
+    Pure comparison of two normalised markets.
+      mispriced -- the order books don't overlap: one exchange's best bid is
+                   above the other's best ask, so the same YES contract can be
+                   bought on one exchange for less than it sells on the other.
+      watch     -- books overlap (or are incomplete) but midpoints differ by >= WATCH_GAP.
+      fair      -- otherwise.
+    """
+    gap = round(poly["probability"] - kalshi["probability"], 4)
+    books = all(m.get("yes_bid") and m.get("yes_ask") for m in (poly, kalshi))
+    if books and (poly["yes_bid"] > kalshi["yes_ask"] or kalshi["yes_bid"] > poly["yes_ask"]):
+        status = "mispriced"
+        edge = round(max(poly["yes_bid"] - kalshi["yes_ask"], kalshi["yes_bid"] - poly["yes_ask"]), 4)
+    else:
+        status = "watch" if abs(gap) >= WATCH_GAP else "fair"
+        edge = 0.0
+    if status == "fair":
+        direction = "prices agree"
+    elif gap > 0:
+        direction = "Polymarket prices YES higher than Kalshi"
+    else:
+        direction = "Kalshi prices YES higher than Polymarket"
+    return {
+        "status": status,
+        "gap": gap,
+        "abs_gap_points": round(abs(gap) * 100, 1),
+        "edge_after_spread": edge,
+        "direction": direction,
+        "basis": "order books (bid/ask)" if books else "last-trade prices (an order book was incomplete)",
+    }
+
+
+def tool_compare_markets(params):
+    poly_id = str(params.get("polymarket_id") or "").strip()
+    kalshi_id = str(params.get("kalshi_ticker") or "").strip()
+    if not poly_id or not kalshi_id:
+        return {"error": "polymarket_id and kalshi_ticker are required"}, 400
+    poly, poly_meta = market_data.get_market_by_id(poly_id, source="polymarket")
+    if not poly:
+        return {"error": f"Polymarket market '{poly_id}' not found", "meta": poly_meta}, 404
+    kalshi, kalshi_meta = market_data.get_market_by_id(kalshi_id, source="kalshi")
+    if not kalshi:
+        return {"error": f"Kalshi market '{kalshi_id}' not found", "meta": kalshi_meta}, 404
+    return {"result": {"polymarket": poly, "kalshi": kalshi, "comparison": compare_prices(poly, kalshi)}}, 200
+
+
 TOOLS = {
     "get_market_price": {
         "handler": tool_get_market_price,
@@ -206,6 +260,11 @@ TOOLS = {
     "get_exposure_summary": {
         "handler": tool_get_exposure_summary,
         "input_schema": {},
+    },
+    # Student 4 -- AI Market Analyst Assistant
+    "compare_markets": {
+        "handler": tool_compare_markets,
+        "input_schema": {"polymarket_id": "string (required, numeric)", "kalshi_ticker": "string (required)"},
     },
 }
 

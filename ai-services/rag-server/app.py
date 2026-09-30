@@ -124,11 +124,16 @@ def load_portfolio_entries():
                         "source": "student-2-portfolio"})
     return entries
 
-def retrieve_context(question, market_id=None, source="both", top_k=3):
+MAX_PINNED_MARKETS = 3
+
+
+def retrieve_context(question, market_ids=None, source="both", top_k=3):
     """
     Very simple keyword-overlap retrieval (sufficient for Release 1).
-    Returns a list of {text, source, citation_id} passages, plus any
-    matched live market data as additional grounding context.
+    Returns a list of {text, source, citation_id} passages, plus the live
+    markets used as additional grounding context: the pinned market_ids if
+    given (e.g. both sides of a cross-exchange comparison), else the best
+    keyword match.
     """
     q_lower = question.lower()
     kb = load_knowledge_base() + load_portfolio_entries()
@@ -140,19 +145,26 @@ def retrieve_context(question, market_id=None, source="both", top_k=3):
     scored.sort(key=lambda x: -x[0])
     passages = [e for _, e in scored[:top_k]]
 
-    market_context = None
-    if market_id:
-        market_context, _ = market_data.get_market_by_id(market_id, source=source)
+    market_contexts = []
+    if market_ids:
+        for mid in market_ids[:MAX_PINNED_MARKETS]:
+            market, _ = market_data.get_market_by_id(mid, source=source)
+            if market:
+                market_contexts.append(market)
     elif any(word in q_lower for word in ["market", "price", "probability", "trending"]):
         markets, _ = market_data.fetch_markets(source=source, query=question, limit=3)
         if markets:
-            market_context = markets[0]
+            market_contexts.append(markets[0])
 
-    return passages, market_context
+    return passages, market_contexts
 
 
-def compute_confidence(passages, market_context):
-    citation_count = len(passages) + (1 if market_context else 0)
+def _cents(p):
+    return "n/a" if p is None else f"{p * 100:.1f}c"
+
+
+def compute_confidence(passages, market_contexts):
+    citation_count = len(passages) + len(market_contexts)
     if citation_count >= 2:
         return "High"
     if citation_count == 1:
@@ -168,27 +180,31 @@ def health():
 @app.post("/rag/query")
 def rag_query():
     """
-    Body: {"question": "...", "market_id": "<optional>", "source": "polymarket|kalshi|both"}
+    Body: {"question": "...", "market_id": "<optional>", "market_ids": ["<optional>", ...],
+           "source": "polymarket|kalshi|both"}
     Returns: {"answer", "citations": [...], "confidence", "insufficient_context": bool}
     """
     body = request.get_json(force=True) or {}
     question = body.get("question", "")
-    market_id = body.get("market_id")
+    market_ids = body.get("market_ids") or ([body["market_id"]] if body.get("market_id") else [])
     source = body.get("source", "both")
 
     if not question:
         return jsonify({"error": "question is required"}), 400
+    if not isinstance(market_ids, list) or not all(isinstance(m, str) for m in market_ids):
+        return jsonify({"error": "market_ids must be a list of strings"}), 400
 
-    passages, market_context = retrieve_context(question, market_id=market_id, source=source)
+    passages, market_contexts = retrieve_context(question, market_ids=market_ids, source=source)
 
     citations = []
     for p in passages:
         citations.append({"id": p["id"], "source": p["source"], "excerpt": p["text"]})
-    if market_context:
+    for m in market_contexts:
         citations.append({
-            "id": f"market:{market_context['id']}",
-            "source": market_context["source"],
-            "excerpt": f"{market_context['title']} — probability {market_context['probability']:.2f}, volume {market_context['volume']}",
+            "id": f"market:{m['id']}",
+            "source": m["source"],
+            "excerpt": (f"{m['source'].title()}: {m['title']} — probability {m['probability']:.3f} "
+                        f"(bid {_cents(m.get('yes_bid'))}, ask {_cents(m.get('yes_ask'))}), volume {m['volume']:.0f}"),
         })
 
     # INSUFFICIENT CONTEXT: no unsupported answer is generated
@@ -222,7 +238,7 @@ def rag_query():
     if not answer:
         answer = "AI-Mode is currently unavailable, so I can't generate a grounded answer right now. Here is the relevant context I found instead: " + context_text
 
-    confidence = compute_confidence(passages, market_context)
+    confidence = compute_confidence(passages, market_contexts)
 
     return jsonify({
         "answer": answer,

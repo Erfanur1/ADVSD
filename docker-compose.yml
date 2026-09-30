@@ -85,9 +85,13 @@ services:
   # ---------- Student 4 (AI Market Analyst Assistant) ----------
   student-4-backend:
     build: ./student-4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DB_PATH: /data/student4.db
       AI_MODE_URL: http://ai-mode:8000
+      MCP_URL: http://host.docker.internal:8100
+      RAG_URL: http://host.docker.internal:8200
     volumes: ["s4data:/data"]
     ports: ["5004:5004"]
     depends_on: [ai-mode]
