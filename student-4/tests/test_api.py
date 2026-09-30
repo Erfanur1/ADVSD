@@ -168,10 +168,15 @@ def test_mcp_unreachable_returns_502(client, monkeypatch):
 
 def test_rag_grounded_answer_with_citations(live):
     client, sent = live
-    data = client.post("/rag/ask", json={"query": "Why do the Fed markets differ?", "market_id": "555"}).get_json()
+    data = client.post("/rag/ask", json={"query": "Why do the Fed markets differ?",
+                                         "market_ids": ["555", "KXFED-26OCT-C"]}).get_json()
     assert data["status"] == "ok" and data["confidence"] == "High" and data["generated"] is True
     assert data["citations"][0] == {"id": "S1", "ref": "market:555", "source": "polymarket", "snippet": "Fed cut 0.62"}
-    assert sent[-1][1] == {"question": "Why do the Fed markets differ?", "market_id": "555"}
+    assert sent[-1][1] == {"question": "Why do the Fed markets differ?", "market_ids": ["555", "KXFED-26OCT-C"]}
+
+def test_rag_rejects_bad_market_ids(client):
+    for ids in ("555", ["a", "b", "c", "d"], [""], [123]):
+        assert client.post("/rag/ask", json={"query": "q", "market_ids": ids}).status_code == 400
 
 def test_rag_insufficient_context(live):
     client, _ = live

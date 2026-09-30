@@ -413,23 +413,24 @@ def mispricing_save():
 def rag_ask():
     data = request.get_json(force=True, silent=True) or {}
     query = (data.get("query") or "").strip()
-    market_id = (str(data.get("market_id") or "").strip() or None)
+    market_ids = data.get("market_ids") or ([data["market_id"]] if data.get("market_id") else [])
     if not query:
         return jsonify(status="rejected", error="Query is required."), 400
     if len(query) > 500:
         return jsonify(status="rejected", error="Query too long (max 500 chars)."), 400
-    if market_id and len(market_id) > 80:
-        return jsonify(status="rejected", error="market_id is too long."), 400
+    if (not isinstance(market_ids, list) or len(market_ids) > 3
+            or not all(isinstance(m, str) and 0 < len(m) <= 80 for m in market_ids)):
+        return jsonify(status="rejected", error="market_ids must be up to 3 short strings."), 400
 
     trace = [{"stage": "Plan", "detail": "Ask the shared RAG server to retrieve sources and answer only from them"
-              + (f", pinned to market {market_id}." if market_id else ".")}]
+              + (f", pinned to markets {', '.join(market_ids)}." if market_ids else ".")}]
     if not RAG_ENABLED:
         trace.append({"stage": "Adapt", "detail": "RAG is disabled here, so no call was made."})
         return jsonify(status="disabled", error="RAG is disabled in this environment (RAG_ENABLED=false).",
                        agentic_trace=trace), 503
     body = {"question": query}
-    if market_id:
-        body["market_id"] = market_id
+    if market_ids:
+        body["market_ids"] = market_ids
     try:
         resp = requests.post(f"{RAG_URL}/rag/query", json=body, timeout=180)
         resp.raise_for_status()
