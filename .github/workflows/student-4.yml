@@ -4,16 +4,24 @@ on:
   push:
     paths:
       - "student-4/**"
+      - "ai-services/shared/**"
+      - "ai-services/mcp-server/**"
       - ".github/workflows/student-4.yml"
   pull_request:
     paths:
       - "student-4/**"
+      - "ai-services/shared/**"
+      - "ai-services/mcp-server/**"
       - ".github/workflows/student-4.yml"
   workflow_dispatch:
 
 jobs:
   build-and-validate:
     runs-on: ubuntu-latest
+    env:
+      # Release 1: MCP + RAG integration is retained but disabled in CI/CD
+      MCP_ENABLED: "false"
+      RAG_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -34,10 +42,34 @@ jobs:
           python -m py_compile "student-4/backend/init_db.py"
           python -m py_compile "student-4/frontend/app.py"
 
-      - name: Run pytest
+      - name: Run pytest (feature)
         run: |
           cd "student-4"
           python -m pytest tests/ -v
 
+      # Offline: upstream market APIs are faked, no live MCP/RAG servers are started
+      - name: Run pytest (shared data layer + compare_markets MCP tool)
+        run: |
+          pip install -r ai-services/mcp-server/requirements.txt
+          (cd ai-services/shared && python -m pytest test_market_data.py -v)
+          (cd ai-services/mcp-server && python -m pytest test_compare_markets.py -v)
+
       - name: Build Docker image
         run: docker build -t student-4-image "./student-4"
+
+      - name: Smoke test container with MCP/RAG disabled
+        run: |
+          docker run -d --name s4 -p 5004:5004 -e DB_PATH=/tmp/s4.db \
+            -e MCP_ENABLED=false -e RAG_ENABLED=false student-4-image
+          for i in $(seq 1 20); do curl -sf http://localhost:5004/health && break; sleep 1; done
+          echo; echo "--- CRUD still works ---"
+          curl -sf http://localhost:5004/markets | head -c 200; echo
+          echo "--- MCP (expect disabled) ---"
+          curl -s -X POST http://localhost:5004/mcp/execute -H 'Content-Type: application/json' \
+            -d '{"tool":"compare_markets","parameters":{"polymarket_id":"1","kalshi_ticker":"KX-1"}}' | tee mcp.json
+          grep -q '"disabled"' mcp.json
+          echo; echo "--- RAG (expect disabled) ---"
+          curl -s -X POST http://localhost:5004/rag/ask -H 'Content-Type: application/json' \
+            -d '{"query":"Is the Fed October market mispriced?"}' | tee rag.json
+          grep -q '"disabled"' rag.json
+          docker rm -f s4
