@@ -351,7 +351,10 @@ def mispricing_compare():
     poly, kalshi, c = res["polymarket"], res["kalshi"], res["comparison"]
     edge = (f"<span>Edge after spread</span><span>{c['edge_after_spread'] * 100:.1f} pts</span>"
             if c["status"] == "mispriced" else "")
-    question = f"Why might \"{poly['title']}\" be priced differently on Polymarket and Kalshi?"
+    # State the measured result so the model explains the real comparison instead of assuming a gap.
+    question = (f"Polymarket prices \"{poly['title']}\" at {poly['probability']:.1%} and Kalshi prices the same "
+                f"event at {kalshi['probability']:.1%}: {c['abs_gap_points']} points apart, rated {c['status']}. "
+                f"Using only the sources, explain what this comparison shows and what could cause any difference.")
     return f"""
       <p><span class="status {escape(c['status'])}">{escape(c['status'])}</span>
          &nbsp;{escape(c['direction'])}</p>
