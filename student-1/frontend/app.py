@@ -11,8 +11,8 @@ API = os.getenv("BACKEND_URL", "http://student-1-backend:5001")
 PAGE = """
 <!doctype html><html><head>
 <meta charset="utf-8"><title>Market Watchlist & Discovery</title>
-<link rel="stylesheet" href="http://localhost:8080/css/theme.css">
-<script src="http://localhost:8080/js/nav.js" defer></script>
+<link rel="stylesheet" href="http://localhost:8080/css/theme.css?v=r1">
+<script src="http://localhost:8080/js/nav.js?v=r1" defer></script>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head><body>
 <header><h1>Market Watchlist &amp; Discovery</h1>

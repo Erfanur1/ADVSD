@@ -14,8 +14,8 @@ PAGE = """
 <!doctype html><html><head>
 <meta charset="utf-8"><title>AI Market Analyst Assistant</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="http://localhost:8080/css/theme.css">
-<script src="http://localhost:8080/js/nav.js" defer></script>
+<link rel="stylesheet" href="http://localhost:8080/css/theme.css?v=r1">
+<script src="http://localhost:8080/js/nav.js?v=r1" defer></script>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <style>
   .ai-forms{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}

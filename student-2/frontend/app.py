@@ -14,8 +14,8 @@ PAGE = """
 <head>
     <meta charset="utf-8">
     <title>Portfolio & Position Tracker</title>
-    <link rel="stylesheet" href="http://localhost:8080/css/theme.css">
-    <script src="http://localhost:8080/js/nav.js" defer></script>
+    <link rel="stylesheet" href="http://localhost:8080/css/theme.css?v=r1">
+    <script src="http://localhost:8080/js/nav.js?v=r1" defer></script>
     <style>
       form input, form select { flex: 1 1 0; min-width: 0; margin: 0; }
       form select { flex: 0 0 90px; }
