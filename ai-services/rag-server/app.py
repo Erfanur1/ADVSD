@@ -127,6 +127,56 @@ def load_portfolio_entries():
 MAX_PINNED_MARKETS = 3
 
 
+# ---------------- Student 3: Market Research Notes & News Feed knowledge ----------------
+# Live entries built from the student-3 backend (read-only GETs), in the same
+# {id, market_keywords, text, source} shape as the knowledge base above.
+# This is what load_knowledge_base()'s docstring refers to as the intended
+# real data source, replacing/supplementing the two placeholder entries.
+NOTES_API_URL = os.getenv("NOTES_API_URL", "http://localhost:5003")
+
+
+def _text_keywords(text):
+    words = [w.strip(".,!?()").lower() for w in (text or "").split()]
+    return [w for w in words if len(w) >= 4]
+
+
+def load_notes_entries():
+    """Returns [] if the research-notes service is down, so RAG keeps working."""
+    try:
+        notes = requests.get(f"{NOTES_API_URL}/notes", timeout=10).json()
+        articles = requests.get(f"{NOTES_API_URL}/news", timeout=10).json()
+    except (requests.RequestException, ValueError):
+        return []
+
+    entries = []
+    for n in notes:
+        headline = n.get("headline", "")
+        tag_words = [t.strip().lower() for t in (n.get("tags") or "").split(",") if t.strip()]
+        keywords = list(dict.fromkeys(_text_keywords(headline) + tag_words))
+        text = f"Research note on '{headline}': {n.get('title') or '(untitled)'} \u2014 {n.get('content', '')}"
+        if n.get("tags"):
+            text += f" (tags: {n['tags']})"
+        entries.append({
+            "id": f"student3-note#{n['id']}",
+            "market_keywords": keywords,
+            "text": text,
+            "source": "student-3-research-notes",
+        })
+
+    for a in articles:
+        keywords = list(dict.fromkeys(_text_keywords(a.get("headline", "")) + [a.get("category", "").lower()]))
+        text = (f"News: {a.get('headline', '')} ({a.get('category', '')}, {a.get('published_date', '')}) "
+                f"\u2014 {a.get('summary', '')}")
+        entries.append({
+            "id": f"student3-news#{a['id']}",
+            "market_keywords": keywords,
+            "text": text,
+            "source": "student-3-news-feed",
+        })
+
+    return entries
+
+
 def retrieve_context(question, market_ids=None, source="both", top_k=3):
     """
     Very simple keyword-overlap retrieval (sufficient for Release 1).
@@ -136,7 +186,7 @@ def retrieve_context(question, market_ids=None, source="both", top_k=3):
     keyword match.
     """
     q_lower = question.lower()
-    kb = load_knowledge_base() + load_portfolio_entries()
+    kb = load_knowledge_base() + load_portfolio_entries() + load_notes_entries()
     scored = []
     for entry in kb:
         overlap = sum(1 for kw in entry["market_keywords"] if kw in q_lower)

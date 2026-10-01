@@ -37,3 +37,32 @@ def test_notes_crud(client):
     assert client.put(f"/notes/{nid}", json={"title": "x2", "content": "y2", "tags": "t2"}).status_code == 200
     # Delete
     assert client.delete(f"/notes/{nid}").status_code == 200
+
+
+def test_mcp_search_disabled_in_ci_gracefully(monkeypatch):
+    # In CI, no live MCP server is running, so this should return a
+    # clean, structured fallback -- not a crash. This IS the
+    # "disabled during CI/CD" behaviour required by the R1 spec.
+    monkeypatch.setenv("MCP_URL", "http://localhost:9999")
+    import backend.app as appmod
+    importlib.reload(appmod)
+    client = appmod.app.test_client()
+
+    r = client.post("/mcp/search", json={"query": "election"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["markets"] == []
+    assert any(step["stage"] == "Adapt" for step in body["agentic_trace"])
+
+
+def test_rag_ask_disabled_in_ci_gracefully(monkeypatch):
+    monkeypatch.setenv("RAG_URL", "http://localhost:9998")
+    import backend.app as appmod
+    importlib.reload(appmod)
+    client = appmod.app.test_client()
+
+    r = client.post("/rag/ask", json={"question": "whats trending"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["insufficient_context"] is True
+    assert "unavailable" in body["answer"].lower()

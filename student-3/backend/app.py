@@ -9,6 +9,8 @@ load_dotenv()
 app = Flask(__name__)
 DB_PATH = os.getenv("DB_PATH", "/data/student3.db")
 AI_MODE_URL = os.getenv("AI_MODE_URL", "http://ai-mode:8000")
+MCP_URL = os.getenv("MCP_URL", "http://localhost:8100")
+RAG_URL = os.getenv("RAG_URL", "http://localhost:8200")
 
 
 def db():
@@ -193,6 +195,89 @@ def ai_briefing():
         trace.append({"stage": "Adapt", "detail": "Returned AI-Mode's briefing to the user."})
 
     return jsonify(output=output, agentic_trace=trace)
+
+
+# ---- MCP: search live markets via the shared MCP server ----
+# Lets a user look up a live market to write a research note about,
+# rather than only relying on the seeded/local news_articles table.
+@app.post("/mcp/search")
+def mcp_search():
+    trace = []
+    data = request.get_json(force=True) or {}
+    query = data.get("query", "")
+
+    # PLAN
+    trace.append({"stage": "Plan", "detail": f"Decided to search live markets via MCP for query: '{query}'."})
+
+    # ACT
+    trace.append({"stage": "Act", "detail": "Called the shared MCP server's search_markets tool."})
+    mcp_reachable = True
+    result = []
+    meta = {}
+    try:
+        resp = requests.post(
+            f"{MCP_URL}/mcp/call",
+            json={"tool": "search_markets", "params": {"query": query, "source": "both"}},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        result = body.get("result", [])
+        meta = body.get("meta", {})
+    except Exception:
+        mcp_reachable = False
+
+    # OBSERVE
+    got_results = mcp_reachable and bool(result)
+    trace.append({"stage": "Observe", "detail": f"MCP server returned {len(result)} live market(s)." if got_results else "MCP server returned no usable results."})
+
+    # ADAPT
+    if not got_results:
+        trace.append({"stage": "Adapt", "detail": "Returning an empty list; frontend will show a fallback message."})
+    else:
+        trace.append({"stage": "Adapt", "detail": "Returning live market results to the user."})
+
+    return jsonify(markets=result, meta=meta, agentic_trace=trace)
+
+
+# ---- RAG: grounded Q&A over research notes + news via the shared RAG server ----
+@app.post("/rag/ask")
+def rag_ask():
+    trace = []
+    data = request.get_json(force=True) or {}
+    question = data.get("question", "")
+
+    # PLAN
+    trace.append({"stage": "Plan", "detail": f"Decided to ask the shared RAG server, grounded in research notes and news: '{question}'."})
+
+    # ACT
+    trace.append({"stage": "Act", "detail": "Called the shared RAG server's /rag/query endpoint."})
+    rag_reachable = True
+    answer, citations, confidence, insufficient = "", [], "Low", True
+    try:
+        resp = requests.post(f"{RAG_URL}/rag/query", json={"question": question}, timeout=60)
+        resp.raise_for_status()
+        body = resp.json()
+        answer = body.get("answer", "")
+        citations = body.get("citations", [])
+        confidence = body.get("confidence", "Low")
+        insufficient = body.get("insufficient_context", True)
+    except Exception:
+        rag_reachable = False
+
+    # OBSERVE
+    got_answer = rag_reachable and bool(answer)
+    trace.append({"stage": "Observe", "detail": f"RAG server returned an answer with confidence={confidence}, insufficient_context={insufficient}." if got_answer else "RAG server did not return a usable answer."})
+
+    # ADAPT
+    if not got_answer:
+        answer = "RAG service is currently unavailable. Please try again shortly."
+        trace.append({"stage": "Adapt", "detail": "Returned a fallback message since the RAG server could not be reached."})
+    else:
+        trace.append({"stage": "Adapt", "detail": "Returned the grounded answer, citations, and confidence to the user."})
+
+    return jsonify(answer=answer, citations=citations, confidence=confidence,
+                    insufficient_context=insufficient, agentic_trace=trace)
 
 
 if __name__ == "__main__":

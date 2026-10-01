@@ -34,6 +34,11 @@ jobs:
           python -m py_compile "student-3/backend/init_db.py"
           python -m py_compile "student-3/frontend/app.py"
 
+      - name: Confirm MCP/RAG disabled in CI (unreachable local URLs)
+        run: |
+          echo "MCP_URL and RAG_URL are not set in CI, so they default to localhost ports with no live servers running."
+          echo "This intentionally exercises the graceful-fallback path rather than live MCP/RAG calls."
+
       - name: Run pytest
         run: |
           cd "student-3"

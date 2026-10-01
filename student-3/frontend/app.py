@@ -108,6 +108,27 @@ PAGE = """
     </div>
   </section>
 
+  <section>
+    <h2>Live markets (MCP)</h2>
+    <div class="sr-toolbar">
+      <input name="q" placeholder="Search live markets to research..."
+             hx-get="/live-search" hx-target="#live-markets" hx-trigger="keyup changed delay:400ms">
+    </div>
+    <div id="live-markets" class="sr-feed"><p class="sr-empty">Search above to pull live markets via the shared MCP server.</p></div>
+  </section>
+
+  <section>
+    <h2>Ask, grounded in your notes (RAG)</h2>
+    <div class="sr-briefing-panel">
+      <form hx-post="/rag-ask" hx-target="#rag-out" hx-indicator="#rag-loading">
+        <input name="question" placeholder="e.g. What's the latest on the election market?" style="width:60%;max-width:420px">
+        <button type="submit">Ask</button>
+      </form>
+      <span id="rag-loading" class="htmx-indicator sr-empty">Retrieving context&hellip;</span>
+      <div id="rag-out"></div>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>
@@ -245,6 +266,63 @@ def ai():
         return f"<div>{output}</div>"
     except Exception:
         return '<p class="sr-empty">Couldn\'t reach AI-Mode. Try again shortly.</p>'
+
+
+def render_live_market(m):
+    prob = m.get("probability")
+    prob_pct = f"{int(prob * 100)}%" if isinstance(prob, (int, float)) else "?"
+    return f"""
+    <article class="sr-article">
+      <div class="sr-article-meta">
+        <span class="sr-pill">{m.get('source', '')}</span>
+        <span class="sr-article-source">{prob_pct}</span>
+      </div>
+      <h3>{m.get('title', '(untitled market)')}</h3>
+      <div class="sr-article-source">id {m.get('id', '')}</div>
+    </article>
+    """
+
+
+@app.get("/live-search")
+def live_search():
+    q = request.args.get("q", "")
+    if not q:
+        return '<p class="sr-empty">Search above to pull live markets via the shared MCP server.</p>'
+    try:
+        data = requests.post(f"{API}/mcp/search", json={"query": q}, timeout=15).json()
+        markets = data.get("markets", [])
+    except Exception:
+        markets = None
+    if markets is None:
+        return '<p class="sr-empty">Couldn\'t reach the MCP server. Try again shortly.</p>'
+    if not markets:
+        return '<p class="sr-empty">No live markets matched that search.</p>'
+    return "".join(render_live_market(m) for m in markets)
+
+
+@app.post("/rag-ask")
+def rag_ask():
+    question = request.form.get("question", "")
+    if not question:
+        return '<p class="sr-empty">Type a question first.</p>'
+    try:
+        data = requests.post(f"{API}/rag/ask", json={"question": question}, timeout=60).json()
+        answer = data.get("answer", "").strip()
+        citations = data.get("citations", [])
+        confidence = data.get("confidence", "Low")
+    except Exception:
+        return '<p class="sr-empty">Couldn\'t reach the RAG server. Try again shortly.</p>'
+    if not answer:
+        return '<p class="sr-empty">No answer came back.</p>'
+    cite_html = "".join(
+        f'<div class="sr-article-source">&middot; {c.get("source", "")}: {c.get("excerpt", "")[:120]}</div>'
+        for c in citations
+    )
+    return f"""
+    <div>{answer}</div>
+    <p class="sr-article-source" style="margin-top:8px">Confidence: {confidence}</p>
+    {cite_html}
+    """
 
 
 if __name__ == "__main__":
