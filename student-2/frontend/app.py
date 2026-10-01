@@ -87,8 +87,8 @@ PAGE = """
     <h2>Portfolio Validation</h2>
     <div class="panel">
       <form class="row" hx-post="/mcp/run-tool" hx-target="#mcp-out" hx-swap="innerHTML" hx-indicator="#mcp-loading" style="margin:0;">
-        <select name="portfolio_id" hx-get="/portfolio-options" hx-trigger="load" hx-swap="innerHTML">
-          <option value="1">Main Portfolio</option>
+        <select name="portfolio_id">
+          {% for p in portfolios %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
         </select>
         <button type="submit" name="tool" value="validate_portfolio">Run Portfolio Validation Tool</button>
         <button type="submit" name="tool" value="get_exposure_summary">Exposure by Category</button>
@@ -158,7 +158,11 @@ def backend_error(data, fallback):
 
 @app.get("/")
 def home():
-    return render_template_string(PAGE)
+    try:
+        portfolios = requests.get(f"{BACKEND_URL}/portfolios", timeout=10).json()
+    except Exception:
+        portfolios = [{"id": 1, "name": "Main Portfolio"}]
+    return render_template_string(PAGE, portfolios=portfolios)
 
 
 @app.get("/positions-list")
