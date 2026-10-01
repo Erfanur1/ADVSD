@@ -61,6 +61,13 @@ PAGE = """
   .sr-briefing-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
                         padding: 18px; }
   .sr-briefing-panel p.sr-empty { margin: 10px 0 0; }
+
+  .sr-rag-insufficient { border-left: 3px solid #c77b2f; padding: 10px 14px;
+                          background: rgba(199,123,47,0.08); border-radius: 6px; }
+  .sr-rag-insufficient strong { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+                                 color: #c77b2f; display: block; margin-bottom: 4px; }
+  .sr-rag-grounded { border-left: 3px solid var(--accent); padding: 10px 14px;
+                      background: var(--panel-raised, rgba(255,255,255,0.03)); border-radius: 6px; }
   #ai-out:empty { display: none; }
   #ai-out { margin-top: 14px; font-family: inherit; font-size: .92rem; line-height: 1.5; }
 
@@ -310,18 +317,32 @@ def rag_ask():
         answer = data.get("answer", "").strip()
         citations = data.get("citations", [])
         confidence = data.get("confidence", "Low")
+        insufficient = data.get("insufficient_context", True)
     except Exception:
         return '<p class="sr-empty">Couldn\'t reach the RAG server. Try again shortly.</p>'
     if not answer:
         return '<p class="sr-empty">No answer came back.</p>'
+
+    if insufficient:
+        # Distinct state: the RAG server explicitly declined to generate an
+        # unsupported answer, rather than just returning a low-confidence one.
+        return f"""
+        <div class="sr-rag-insufficient">
+          <strong>Insufficient context</strong>
+          <p>{answer}</p>
+        </div>
+        """
+
     cite_html = "".join(
         f'<div class="sr-article-source">&middot; {c.get("source", "")}: {c.get("excerpt", "")[:120]}</div>'
         for c in citations
     )
     return f"""
-    <div>{answer}</div>
-    <p class="sr-article-source" style="margin-top:8px">Confidence: {confidence}</p>
-    {cite_html}
+    <div class="sr-rag-grounded">
+      <div>{answer}</div>
+      <p class="sr-article-source" style="margin-top:8px">Confidence: {confidence}</p>
+      {cite_html}
+    </div>
     """
 
 
