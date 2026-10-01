@@ -69,6 +69,10 @@ services:
     environment:
       DB_PATH: /data/student3.db
       AI_MODE_URL: http://ai-mode:8000
+      MCP_URL: http://host.docker.internal:8100
+      RAG_URL: http://host.docker.internal:8200
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes: ["s3data:/data"]
     ports: ["5003:5003"]
     depends_on: [ai-mode]
