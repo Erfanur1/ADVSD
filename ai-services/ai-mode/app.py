@@ -61,4 +61,4 @@ def complete():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note

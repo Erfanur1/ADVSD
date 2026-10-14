@@ -264,4 +264,4 @@ def rag_ask():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001)
+    app.run(host="0.0.0.0", port=5001)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note
