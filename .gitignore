@@ -7,3 +7,9 @@ __pycache__/
 ai-services/shared/market_cache.json
 
 ai-services/agentic-loop/validation_logs/
+
+ai-services/multi-agent-server/venv/
+ai-services/multi-agent-server/__pycache__/
+ai-services/multi-agent-server/.env
+ai-services/multi-agent-server/workflow_history.json
+ai-services/multi-agent-server/multi_agent_logs/
