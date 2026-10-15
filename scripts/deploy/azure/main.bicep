@@ -11,6 +11,7 @@
 param location string = resourceGroup().location
 param namePrefix string = 'group29r2'
 param imageTag string = 'latest'
+param llmModel string = 'llama3.2:3b'
 
 var acrName = '${namePrefix}acr'
 var logAnalyticsName = '${namePrefix}-logs'
@@ -127,6 +128,131 @@ resource home 'Microsoft.App/containerApps@2023-05-01' = {
   }
 }
 
+// Mount the Ollama model cache share into the environment
+resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppsEnv
+  name: 'ollamadata'
+  properties: {
+    azureFile: {
+      accountName: storageAccount.name
+      accountKey: storageAccount.listKeys().keys[0].value
+      shareName: 'ollamadata'
+      accessMode: 'ReadWrite'
+    }
+  }
+  dependsOn: [
+    ollamaShare
+  ]
+}
+
+// Ollama runtime: internal only. Pulls the approved LLM on startup and
+// caches it on the Azure Files share so restarts do not re-download it.
+resource ollama 'Microsoft.App/containerApps@2023-05-01' = {
+  name: '${namePrefix}-ollama'
+  location: location
+  properties: {
+    managedEnvironmentId: containerAppsEnv.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 11434
+        transport: 'http'
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'ollama'
+          image: 'docker.io/ollama/ollama:latest'
+          command: [ 'sh', '-c' ]
+          args: [ 'ollama serve & sleep 5 && ollama pull ${llmModel} && wait' ]
+          resources: {
+            cpu: json('2')
+            memory: '4Gi'
+          }
+          volumeMounts: [
+            {
+              volumeName: 'ollamamodels'
+              mountPath: '/root/.ollama'
+            }
+          ]
+        }
+      ]
+      volumes: [
+        {
+          name: 'ollamamodels'
+          storageType: 'AzureFile'
+          storageName: 'ollamadata'
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 1
+      }
+    }
+  }
+  dependsOn: [
+    ollamaStorage
+  ]
+}
+
+// AI-Mode: internal only, talks to Ollama
+resource aiMode 'Microsoft.App/containerApps@2023-05-01' = {
+  name: '${namePrefix}-ai-mode'
+  location: location
+  properties: {
+    managedEnvironmentId: containerAppsEnv.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 8000
+        transport: 'http'
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          username: acr.listCredentials().username
+          passwordSecretRef: 'acr-password' // pragma: allowlist secret
+        }
+      ]
+      secrets: [
+        {
+          name: 'acr-password'
+          value: acr.listCredentials().passwords[0].value
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'ai-mode'
+          image: '${acr.properties.loginServer}/aimode:${imageTag}'
+          env: [
+            {
+              name: 'OLLAMA_HOST'
+              value: 'https://${ollama.properties.configuration.ingress.fqdn}'
+            }
+            {
+              name: 'LLM_MODEL'
+              value: llmModel
+            }
+          ]
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 1
+      }
+    }
+  }
+}
+
 module student1 'modules/student-service.bicep' = {
   name: 'student1Deploy'
   params: {
@@ -141,6 +267,7 @@ module student1 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's1data'
+    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
@@ -163,6 +290,7 @@ module student2 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's2data'
+    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
@@ -185,6 +313,7 @@ module student3 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's3data'
+    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
@@ -207,6 +336,7 @@ module student4 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's4data'
+    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }

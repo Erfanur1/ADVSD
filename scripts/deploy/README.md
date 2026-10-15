@@ -4,19 +4,16 @@ Deploys the Prediction Market Intelligence Hub to **Azure Container Apps**.
 
 ## What gets deployed (and what doesn't)
 
-Deployed: the shared `home` landing page, and all 4 students'
-backend + frontend containers (9 containers total). Each backend's
-SQLite database is persisted via an Azure Files share mounted into
-that container, matching the existing `DB_PATH`-based local setup --
-no new database engine introduced.
+Deployed: the shared `home` landing page, all 4 students' backend +
+frontend containers, **AI-Mode**, and the **Ollama runtime with the
+approved LLM** (11 containers total). Each backend's SQLite database
+is persisted via an Azure Files share, and Ollama's downloaded model
+is cached on its own share.
 
-NOT deployed: `ai-mode`, `ollama`, `mcp-server`, `rag-server`,
-`multi-agent-server`. These stay local/non-containerised per the
-Release 2 spec. Each backend already has safe fallback defaults for
-`AI_MODE_URL` / `MCP_URL` / `RAG_URL` (see e.g.
-`student-1/backend/app.py`), so simply not setting those env vars in
-the cloud is enough to keep AI integration disabled by default --
-exactly the same behaviour already verified in CI.
+NOT deployed (disabled in the cloud, per the Release 2 spec):
+`mcp-server`, `rag-server` and `multi-agent-server`. Backends already
+fall back gracefully when those URLs are unreachable, so leaving
+`MCP_URL` / `RAG_URL` unset keeps them disabled.
 
 ## One-time setup
 

@@ -11,6 +11,7 @@ param imageName string
 param backendPort int
 param frontendPort int
 param storageAccountName string
+param aiModeUrl string
 
 @secure()
 param storageAccountKey string
@@ -71,6 +72,10 @@ resource backend 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'DB_PATH'
               value: '/data/student${studentId}.db'
+            }
+            {
+              name: 'AI_MODE_URL'
+              value: aiModeUrl
             }
           ]
           resources: {

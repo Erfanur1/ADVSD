@@ -1,8 +1,8 @@
 name: cloud-deployment
 
-# Deploys the app to Azure Container Apps, but only AFTER the required
-# CI/CD validation (the four student-N-ci workflows) has succeeded on main.
-# Can also be run by hand from the Actions tab (workflow_dispatch).
+# Deploys the integrated app to Azure Container Apps, but only when ALL four
+# individual workflows (student-1.yml to student-4.yml) are green on main.
+# Any team member can also run it by hand from the Actions tab.
 on:
   workflow_run:
     workflows:
@@ -19,22 +19,50 @@ concurrency:
   group: cloud-deployment
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: read
+
 env:
   RESOURCE_GROUP: group29-r2-rg
   LOCATION: australiaeast
   NAME_PREFIX: group29r2
 
 jobs:
+  verify-ci:
+    name: Check all individual workflows are green
+    runs-on: ubuntu-latest
+    outputs:
+      all_green: ${{ steps.check.outputs.all_green }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          all_green=true
+          for wf in student-1.yml student-2.yml student-3.yml student-4.yml; do
+            result=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$wf" \
+              --branch main --status completed --limit 1 \
+              --json conclusion --jq '.[0].conclusion')
+            echo "$wf latest completed run on main: ${result:-none}"
+            if [ "$result" != "success" ]; then
+              all_green=false
+            fi
+          done
+          echo "all_green=$all_green" >> "$GITHUB_OUTPUT"
+          if [ "$all_green" != "true" ]; then
+            echo "::warning::Not every individual workflow is green on main, so deployment is skipped."
+          fi
+
   deploy:
-    # For workflow_run: only deploy if the triggering CI run succeeded.
-    # Manual runs (workflow_dispatch) always proceed.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    needs: verify-ci
+    if: ${{ needs.verify-ci.outputs.all_green == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the commit that passed CI
+      - name: Check out main
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: main
 
       - name: Log in to Azure
         uses: azure/login@v2

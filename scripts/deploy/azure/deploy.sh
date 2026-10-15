@@ -22,6 +22,7 @@ ACR_NAME="${ACR_LOGIN_SERVER%%.*}"
 
 echo "== 3. Build and push images to ACR: $ACR_NAME =="
 az acr build --registry "$ACR_NAME" --image "home:$IMAGE_TAG" ./shared
+az acr build --registry "$ACR_NAME" --image "aimode:$IMAGE_TAG" ./ai-services/ai-mode
 az acr build --registry "$ACR_NAME" --image "student1:$IMAGE_TAG" ./student-1
 az acr build --registry "$ACR_NAME" --image "student2:$IMAGE_TAG" ./student-2
 az acr build --registry "$ACR_NAME" --image "student3:$IMAGE_TAG" ./student-3
