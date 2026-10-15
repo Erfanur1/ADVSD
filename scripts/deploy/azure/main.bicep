@@ -69,6 +69,11 @@ resource s4Share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-
   name: 's4data'
 }
 
+resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
+  parent: fileServices
+  name: 'ollamadata'
+}
+
 resource containerAppsEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: envName
   location: location
