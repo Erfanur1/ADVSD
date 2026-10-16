@@ -144,8 +144,8 @@ def watchlist_add():
     }
     try:
         requests.post(f"{API}/watchlist", json=payload, timeout=10)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[watchlist] failed to create item: {exc}")
     return watchlist_list()
 
 
@@ -153,8 +153,8 @@ def watchlist_add():
 def watchlist_quick_add(market_id):
     try:
         requests.post(f"{API}/watchlist", json={"market_id": market_id, "note": "", "priority": 0}, timeout=10)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[watchlist] failed to quick-add market {market_id}: {exc}")
     return watchlist_list()
 
 
@@ -162,8 +162,8 @@ def watchlist_quick_add(market_id):
 def watchlist_delete(wid):
     try:
         requests.delete(f"{API}/watchlist/{wid}", timeout=10)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[watchlist] failed to delete item {wid}: {exc}")
     return watchlist_list()
 
 
@@ -175,8 +175,8 @@ def watchlist_update(wid):
     }
     try:
         requests.put(f"{API}/watchlist/{wid}", json=payload, timeout=10)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[watchlist] failed to update item {wid}: {exc}")
     return watchlist_list()
 
 
@@ -236,4 +236,4 @@ def rag_ask():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5101)
+    app.run(host="0.0.0.0", port=5101)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note

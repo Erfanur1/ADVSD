@@ -1,0 +1,90 @@
+name: cloud-deployment
+
+# Deploys the integrated app to Azure Container Apps, but only when ALL four
+# individual workflows (student-1.yml to student-4.yml) are green on main.
+# Any team member can also run it by hand from the Actions tab.
+on:
+  workflow_run:
+    workflows:
+      - student-1-ci
+      - student-2-ci
+      - student-3-ci
+      - student-4-ci
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deployments at the same time
+concurrency:
+  group: cloud-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  RESOURCE_GROUP: group29-r2-rg
+  LOCATION: australiaeast
+  NAME_PREFIX: group29r2
+
+jobs:
+  verify-ci:
+    name: Check all individual workflows are green
+    runs-on: ubuntu-latest
+    outputs:
+      all_green: ${{ steps.check.outputs.all_green }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          all_green=true
+          for wf in student-1.yml student-2.yml student-3.yml student-4.yml; do
+            result=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$wf" \
+              --branch main --status completed --limit 1 \
+              --json conclusion --jq '.[0].conclusion')
+            echo "$wf latest completed run on main: ${result:-none}"
+            if [ "$result" != "success" ]; then
+              all_green=false
+            fi
+          done
+          echo "all_green=$all_green" >> "$GITHUB_OUTPUT"
+          if [ "$all_green" != "true" ]; then
+            echo "::warning::Not every individual workflow is green on main, so deployment is skipped."
+          fi
+
+  deploy:
+    needs: verify-ci
+    if: ${{ needs.verify-ci.outputs.all_green == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy infrastructure and containers
+        run: bash scripts/deploy/azure/deploy.sh
+        env:
+          RESOURCE_GROUP: ${{ env.RESOURCE_GROUP }}
+          LOCATION: ${{ env.LOCATION }}
+          NAME_PREFIX: ${{ env.NAME_PREFIX }}
+          IMAGE_TAG: ${{ github.sha }}
+
+      - name: Smoke test deployed apps
+        run: |
+          OUTPUTS=$(az deployment group show \
+            --resource-group "$RESOURCE_GROUP" --name main \
+            --query "properties.outputs" -o json)
+          for key in homeUrl student1Url student2Url student3Url student4Url; do
+            url=$(echo "$OUTPUTS" | jq -r ".${key}.value")
+            echo "Checking $key -> $url"
+            curl -fsS --retry 10 --retry-delay 15 --retry-all-errors -o /dev/null "$url"
+          done
+          echo "All deployed apps responded."

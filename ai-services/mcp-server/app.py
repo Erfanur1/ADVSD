@@ -305,4 +305,4 @@ def call_tool():
 
 if __name__ == "__main__":
     market_data.warm_up()  # index Kalshi's open events in the background
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=PORT)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note

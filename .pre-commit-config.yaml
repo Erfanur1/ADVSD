@@ -1,0 +1,52 @@
+# Shared pre-commit configuration -- Release 2, Task 2.
+#
+# Runs locally on every `git commit` (after `pre-commit install`), before
+# code ever reaches GitHub. Three checks, matching the Release 2 spec:
+#   1. Ruff's security rule set (the "S" / flake8-bandit rules)
+#   2. detect-secrets, diffed against a committed baseline
+#   3. pip-audit, checking installed dependencies against known CVEs
+#
+# One-time setup (each student, once per clone):
+#   pip install pre-commit detect-secrets pip-audit
+#   pre-commit install
+#
+# After that it just runs automatically on `git commit`. To run it by
+# hand against everything (useful for the Section 5 evidence screenshot):
+#   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (security rules)
+        args: ["--select=S", "--no-fix"]
+        # pytest's own `assert` statements trip S101 hundreds of times with
+        # zero security value -- that's noise, not signal, so test files are
+        # excluded from this hook. Real app code is still fully scanned.
+        exclude: "(^|/)tests/|test_.*\\.py$"
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: package-lock.json
+
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: pip-audit (dependency vulnerability scan)
+        entry: python scripts/test/run_pip_audit.py
+        language: python
+        files: requirements\.txt$
+
+  - repo: local
+    hooks:
+      - id: pytest-student-1
+        name: pytest (Student 1 endpoint tests)
+        entry: python -m pytest student-1/tests -q -p no:cacheprovider
+        language: system
+        pass_filenames: false
+        files: ^student-1/
