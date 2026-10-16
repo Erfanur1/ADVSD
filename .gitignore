@@ -12,4 +12,6 @@ ai-services/multi-agent-server/venv/
 ai-services/multi-agent-server/__pycache__/
 ai-services/multi-agent-server/.env
 ai-services/multi-agent-server/workflow_history.json
-ai-services/multi-agent-server/multi_agent_logs/student-1/ai_test_suggestions.md
+ai-services/multi-agent-server/multi_agent_logs/
+
+student-1/ai_test_suggestions.md
