@@ -11,6 +11,7 @@ DB_PATH = os.getenv("DB_PATH", "/data/student1.db")
 AI_MODE_URL = os.getenv("AI_MODE_URL", "http://ai-mode:8000")
 MCP_URL = os.getenv("MCP_URL", "http://localhost:8100")
 RAG_URL = os.getenv("RAG_URL", "http://localhost:8200")
+MULTI_AGENT_URL = os.getenv("MULTI_AGENT_URL", "http://localhost:8300")
 
 
 def db():
@@ -261,6 +262,76 @@ def rag_ask():
         trace.append({"stage": "Adapt", "detail": "Returned the grounded answer, citations, and confidence to the user."})
 
     return jsonify(answer=answer, citations=citations, confidence=confidence, insufficient_context=insufficient, agentic_trace=trace)
+
+# ---- Multi-Agent: Planner / Worker / Reviewer + human review ----
+@app.post("/multi-agent/validate")
+def multi_agent_validate():
+    """Ask the shared Multi-Agent Server to validate a watchlist item against live market data."""
+    trace = []
+    data = request.get_json(force=True) or {}
+    wid = data.get("watchlist_id")
+    if wid is None:
+        return jsonify(error="watchlist_id is required"), 400
+
+    row = db().execute(
+        "SELECT w.id, w.market_id, m.title, m.current_probability "
+        "FROM watchlist w JOIN markets m ON m.id = w.market_id WHERE w.id = ?",
+        (wid,),
+    ).fetchone()
+    if row is None:
+        return jsonify(error=f"watchlist item {wid} not found"), 404
+
+    params = {
+        "feature": "watchlist",
+        "market_id": str(data.get("market_id") or row["market_id"]),
+        "source": data.get("source", "polymarket"),
+        "submitted_value": row["current_probability"],
+    }
+
+    # PLAN
+    trace.append({"stage": "Plan", "detail": f"Decided to have the Multi-Agent Server validate watchlist item {wid} ('{row['title']}') against live data."})
+
+    # ACT
+    trace.append({"stage": "Act", "detail": "Sent the task to the shared Multi-Agent Server (Planner, Worker, Reviewer)."})
+    run = None
+    try:
+        resp = requests.post(
+            f"{MULTI_AGENT_URL}/multi-agent/run",
+            json={"task_type": "validate_market_action", "params": params},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        run = resp.json()
+    except Exception:
+        run = None
+
+    # OBSERVE
+    if run:
+        rec = run.get("review", {}).get("recommendation")
+        trace.append({"stage": "Observe", "detail": f"Multi-Agent run {run.get('run_id')} is {run.get('status')} (reviewer recommendation: {rec})."})
+    else:
+        trace.append({"stage": "Observe", "detail": "Multi-Agent Server did not return a usable run."})
+
+    # ADAPT
+    if run:
+        trace.append({"stage": "Adapt", "detail": "Returned the run for the human review step; nothing is applied until a person approves."})
+    else:
+        trace.append({"stage": "Adapt", "detail": "Multi-Agent Server is unavailable (disabled in the cloud build), so no validation was run."})
+
+    return jsonify(run=run, available=run is not None, agentic_trace=trace)
+
+
+@app.post("/multi-agent/review")
+def multi_agent_review():
+    """Pass the human decision (approve / correct / partial / reject) to the Multi-Agent Server."""
+    data = request.get_json(force=True) or {}
+    if not data.get("run_id") or not data.get("decision"):
+        return jsonify(error="run_id and decision are required"), 400
+    try:
+        resp = requests.post(f"{MULTI_AGENT_URL}/multi-agent/review", json=data, timeout=15)
+    except Exception:
+        return jsonify(error="Multi-Agent Server is unavailable"), 503
+    return jsonify(resp.json()), resp.status_code
 
 
 if __name__ == "__main__":
