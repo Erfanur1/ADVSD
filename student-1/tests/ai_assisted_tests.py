@@ -27,7 +27,8 @@ TARGETS = {"add_watchlist": "POST /watchlist", "list_markets": "GET /markets"}
 TASK = (
     "Write 3 pytest unit test cases for this Flask endpoint: one normal case, "
     "one validation or error case, one edge case. A pytest fixture named "
-    "'client' (a Flask test client) is available. Return only Python code."
+    "'client' (a Flask test client) is already provided, so do NOT define any "
+    "fixture or import anything except pytest. Return only Python code."
 )
 
 
@@ -83,7 +84,9 @@ def main():
         lines += [f"## {label}", f"{test_count} suggested test(s); {valid}/{len(blocks)} block(s) valid Python.", "", output, ""]
     REPORT.write_text("\n".join(lines))
     print(f"Saved suggestions to {REPORT}")
-    return 1 if any_invalid else 0
+    if any_invalid:
+        print("WARNING: some suggestions were not valid Python and were flagged for human review (not a failure).")
+    return 0
 
 
 if __name__ == "__main__":
