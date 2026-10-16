@@ -112,12 +112,17 @@ def list_watchlist():
 @app.post("/watchlist")
 def add_watchlist():
     data = request.get_json(force=True) or {}
+    if "market_id" not in data:
+        return jsonify(error="market_id is required"), 400
     conn = db()
-    cur = conn.execute(
-        "INSERT INTO watchlist (market_id, note, priority) VALUES (?,?,?)",
-        (data["market_id"], data.get("note", ""), data.get("priority", 0)),
-    )
-    conn.commit()
+    try:
+        cur = conn.execute(
+            "INSERT INTO watchlist (market_id, note, priority) VALUES (?,?,?)",
+            (data["market_id"], data.get("note", ""), data.get("priority", 0)),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return jsonify(error=f"market {data['market_id']} does not exist"), 404
     return jsonify(id=cur.lastrowid), 201
 
 

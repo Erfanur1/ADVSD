@@ -41,3 +41,12 @@ repos:
         entry: python scripts/test/run_pip_audit.py
         language: python
         files: requirements\.txt$
+
+  - repo: local
+    hooks:
+      - id: pytest-student-1
+        name: pytest (Student 1 endpoint tests)
+        entry: python -m pytest student-1/tests -q -p no:cacheprovider
+        language: system
+        pass_filenames: false
+        files: ^student-1/
