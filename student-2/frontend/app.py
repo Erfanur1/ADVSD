@@ -100,6 +100,24 @@ PAGE = """
     </div>
   </section>
 
+  <!-- Multi-Agent Review (Release 2) -->
+  <section>
+    <h2>Multi-Agent Portfolio Review</h2>
+    <div class="panel">
+      <p class="empty">Planner &rarr; Worker &rarr; Reviewer agents check a portfolio, then you approve, correct, partially accept or reject the result.</p>
+      <form class="row" hx-post="/multi-agent/validate" hx-target="#ma-out" hx-swap="innerHTML" hx-indicator="#ma-loading" style="margin:0;">
+        <select name="portfolio_id">
+          {% for p in portfolios %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Run Multi-Agent Review</button>
+      </form>
+      <span id="ma-loading" class="htmx-indicator empty">Planner, Worker and Reviewer working&hellip;</span>
+      <div id="ma-out" class="result">
+        <p class="empty">The plan, evidence, reviewer recommendation and your decision will appear here.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- Risk Analysis (AI-Mode) -->
   <section>
     <h2>Risk Analysis</h2>
@@ -190,8 +208,8 @@ def add_position():
     }
     try:
         requests.post(f"{BACKEND_URL}/positions", json=data, timeout=10)
-    except Exception:
-        pass
+    except requests.RequestException as exc:
+        app.logger.warning("Could not add position via backend: %s", exc)
     return positions_list()
 
 
@@ -199,8 +217,8 @@ def add_position():
 def close_position(pos_id):
     try:
         requests.delete(f"{BACKEND_URL}/positions/{pos_id}", timeout=10)
-    except Exception:
-        pass
+    except requests.RequestException as exc:
+        app.logger.warning("Could not close position %s via backend: %s", pos_id, exc)
     return positions_list()
 
 
@@ -326,6 +344,68 @@ def frontend_mcp_run():
 
 
 # ---- AI-Mode risk analysis + agentic trace ----
+# ---- Multi-Agent review: Planner -> Worker -> Reviewer -> Human Review ----
+def render_run(run):
+    plan, worker, review = run.get("plan", {}), run.get("worker_output", {}), run.get("review", {})
+    rec = review.get("recommendation", "")
+    cls = "ok" if rec == "approve" else "warn" if rec == "approve_with_caution" else "err"
+    steps = "".join(f"<li>{escape(s)}</li>" for s in plan.get("steps", []))
+    evidence = "".join(f"<li>{escape(e)}</li>" for e in worker.get("evidence_gathered", [])) or "<li>None gathered.</li>"
+    risks = "".join(f"<li>{escape(r)}</li>" for r in review.get("risks", [])) or '<li class="ok">No risks flagged.</li>'
+    return f"""
+      <p class="empty">Run <code>{escape(run.get('run_id'))}</code> &middot; status <strong>{escape(run.get('status'))}</strong></p>
+      <p><strong>1. Planner</strong> &mdash; task plan:</p><ol>{steps}</ol>
+      <p><strong>2. Worker</strong> &mdash; evidence gathered:</p><ul>{evidence}</ul>
+      <p><strong>3. Reviewer</strong> &mdash; <span class="{cls}">{escape(rec)}</span>
+         ({escape(review.get('confidence'))} confidence):</p><ul>{risks}</ul>"""
+
+
+@app.post("/multi-agent/validate")
+def frontend_multi_agent_validate():
+    try:
+        portfolio_id = int(request.form.get("portfolio_id", 1))
+        data = requests.post(f"{BACKEND_URL}/multi-agent/validate",
+                             json={"portfolio_id": portfolio_id}, timeout=60).json()
+    except Exception as exc:
+        return f'<p class="err">Error reaching backend: {escape(exc)}</p>'
+    if data.get("status") != "ok":
+        return backend_error(data, "Multi-Agent request failed")
+    run = data["run"]
+    run_id = escape(run.get("run_id"))
+    return render_run(run) + f"""
+      <p><strong>4. Human review</strong> &mdash; your decision:</p>
+      <form class="row" hx-post="/multi-agent/review" hx-target="#ma-out" hx-swap="innerHTML" style="margin:0;">
+        <input type="hidden" name="run_id" value="{run_id}">
+        <select name="decision">
+          <option value="approve">Approve</option>
+          <option value="correct">Correct</option>
+          <option value="partial">Partially accept</option>
+          <option value="reject">Reject</option>
+        </select>
+        <input type="text" name="notes" maxlength="300" placeholder="Notes (e.g. rebalance POL exposure first)">
+        <button type="submit">Submit Decision</button>
+      </form>"""
+
+
+@app.post("/multi-agent/review")
+def frontend_multi_agent_review():
+    payload = {"run_id": request.form.get("run_id"), "decision": request.form.get("decision"),
+               "notes": request.form.get("notes") or None}
+    try:
+        data = requests.post(f"{BACKEND_URL}/multi-agent/review", json=payload, timeout=30).json()
+    except Exception as exc:
+        return f'<p class="err">Error reaching backend: {escape(exc)}</p>'
+    if data.get("status") != "ok":
+        return backend_error(data, "Review submission failed")
+    run = data["run"]
+    hd = run.get("human_decision") or {}
+    cls = {"approved": "ok", "rejected": "err"}.get(run.get("status"), "warn")
+    return render_run(run) + f"""
+      <p><strong>4. Human review</strong> &mdash; <span class="{cls}">{escape(run.get('status'))}</span>
+         at {escape(run.get('decided_at'))}{(' &middot; ' + str(escape(hd.get('notes')))) if hd.get('notes') else ''}</p>
+      <p class="empty">Saved to the Multi-Agent Server's workflow history and audit log.</p>"""
+
+
 @app.post("/ai/analyze-risk")
 def ai_analyze_risk():
     try:
@@ -344,4 +424,4 @@ def ai_analyze_risk():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5102)
+    app.run(host="0.0.0.0", port=5102)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note

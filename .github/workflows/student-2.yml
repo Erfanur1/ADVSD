@@ -15,9 +15,10 @@ jobs:
   build-and-validate:
     runs-on: ubuntu-latest
     env:
-      # Release 1: MCP + RAG integration is retained but disabled in CI/CD
+      # MCP + RAG (Release 1) and Multi-Agent (Release 2) are retained but disabled in CI/CD
       MCP_ENABLED: "false"
       RAG_ENABLED: "false"
+      MULTI_AGENT_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -41,19 +42,39 @@ jobs:
           python -m py_compile "student-2/backend/init_db.py"
           python -m py_compile "student-2/frontend/app.py"
 
-      - name: Run pytest
+      - name: Post-commit endpoint tests (GET /positions, GET /trade-history, Multi-Agent routes)
         run: |
           cd "student-2"
-          python -m pytest tests/ -v
+          python -m pytest tests/test_endpoints_r2.py -v --junitxml=endpoint-test-results.xml
+
+      - name: Regression tests (Release 0/1 CRUD, MCP, RAG, AI-Mode)
+        run: |
+          cd "student-2"
+          python -m pytest tests/test_api.py -v
+
+      - name: Upload endpoint test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: student-2-endpoint-test-results
+          path: student-2/endpoint-test-results.xml
 
       - name: Build Docker image
         run: docker build -t student-2-image "./student-2"
 
-      - name: Smoke test container with MCP/RAG disabled
+      - name: Smoke test container (endpoints live, AI services disabled)
         run: |
           docker run -d --name s2 -p 5002:5002 -e DB_PATH=/tmp/s2.db \
-            -e MCP_ENABLED=false -e RAG_ENABLED=false student-2-image
+            -e MCP_ENABLED=false -e RAG_ENABLED=false -e MULTI_AGENT_ENABLED=false student-2-image
           for i in $(seq 1 20); do curl -sf http://localhost:5002/health && break; sleep 1; done
+          echo; echo "--- GET /positions (expect >= 10 rows) ---"
+          curl -sf http://localhost:5002/positions | python -c "import json,sys; d=json.load(sys.stdin); print(len(d), 'positions'); assert len(d) >= 10"
+          echo "--- GET /trade-history (expect >= 10 rows) ---"
+          curl -sf http://localhost:5002/trade-history | python -c "import json,sys; d=json.load(sys.stdin); print(len(d), 'trades'); assert len(d) >= 10"
+          echo "--- Multi-Agent (expect disabled) ---"
+          curl -s -X POST http://localhost:5002/multi-agent/validate -H 'Content-Type: application/json' \
+            -d '{"portfolio_id":1}' | tee ma.json
+          grep -q '"disabled"' ma.json
           echo; echo "--- MCP (expect disabled) ---"
           curl -s -X POST http://localhost:5002/mcp/execute -H 'Content-Type: application/json' \
             -d '{"tool":"validate_portfolio","parameters":{"portfolio_id":1}}' | tee mcp.json

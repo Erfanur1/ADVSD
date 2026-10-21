@@ -14,6 +14,11 @@ RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8200")
 MCP_ENABLED = os.getenv("MCP_ENABLED", "true").lower() == "true"
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
 
+# ---- Release 2: shared local Multi-Agent Server ----
+MULTI_AGENT_URL = os.getenv("MULTI_AGENT_URL", "http://localhost:8300")
+MULTI_AGENT_ENABLED = os.getenv("MULTI_AGENT_ENABLED", "true").lower() == "true"
+HUMAN_DECISIONS = {"approve", "correct", "partial", "reject"}
+
 # Tool boundary: this feature may only call these MCP tools.
 ALLOWED_MCP_TOOLS = {"validate_portfolio", "get_exposure_summary"}
 
@@ -28,7 +33,8 @@ def db():
 @app.get("/health")
 def health():
     return jsonify(status="ok", feature="portfolio-position-tracker",
-                   mcp_enabled=MCP_ENABLED, rag_enabled=RAG_ENABLED)
+                   mcp_enabled=MCP_ENABLED, rag_enabled=RAG_ENABLED,
+                   multi_agent_enabled=MULTI_AGENT_ENABLED)
 
 
 # ---- portfolios: Read ----
@@ -201,6 +207,76 @@ def rag_ask():
     )
 
 
+# ---- Multi-Agent: Planner -> Worker -> Reviewer -> Human Review (Release 2) ----
+@app.post("/multi-agent/validate")
+def multi_agent_validate():
+    """Ask the shared Multi-Agent Server to review a portfolio; a person decides afterwards."""
+    data = request.get_json(force=True, silent=True) or {}
+    trace = []
+    try:
+        portfolio_id = int(data.get("portfolio_id"))
+    except (TypeError, ValueError):
+        return jsonify(status="rejected", error="portfolio_id (integer) is required."), 400
+
+    row = db().execute("SELECT id, name FROM portfolios WHERE id=?", (portfolio_id,)).fetchone()
+    if row is None:
+        return jsonify(status="rejected", error=f"portfolio {portfolio_id} not found."), 404
+
+    # PLAN
+    trace.append({"stage": "Plan", "detail": f"Decided to have the Multi-Agent Server review portfolio "
+                                             f"{portfolio_id} ('{row['name']}') before any action is taken."})
+    if not MULTI_AGENT_ENABLED:
+        trace.append({"stage": "Act", "detail": "Skipped: Multi-Agent is disabled in this environment (MULTI_AGENT_ENABLED=false)."})
+        return jsonify(status="disabled", error="Multi-Agent is disabled in this environment.", agentic_trace=trace), 503
+
+    # ACT
+    trace.append({"stage": "Act", "detail": "Sent a review_portfolio task to the shared Multi-Agent Server (Planner, Worker, Reviewer)."})
+    try:
+        resp = requests.post(
+            f"{MULTI_AGENT_URL}/multi-agent/run",
+            json={"task_type": "review_portfolio",
+                  "params": {"feature": "portfolio", "portfolio_id": portfolio_id, "portfolio_name": row["name"]}},
+            timeout=40,
+        )
+        resp.raise_for_status()
+        run = resp.json()
+    except Exception as exc:
+        trace.append({"stage": "Observe", "detail": "Multi-Agent Server did not return a usable run."})
+        trace.append({"stage": "Adapt", "detail": "Returned an unavailable message; no review was run."})
+        return jsonify(status="unavailable", error=f"Multi-Agent Server unreachable: {exc}", agentic_trace=trace), 502
+
+    # OBSERVE
+    review = run.get("review", {})
+    trace.append({"stage": "Observe", "detail": f"Run {run.get('run_id')} is {run.get('status')}; reviewer recommends "
+                                                f"{review.get('recommendation')} ({review.get('confidence')} confidence, "
+                                                f"{len(review.get('risks', []))} risks)."})
+    # ADAPT
+    trace.append({"stage": "Adapt", "detail": "Returned the run for human review; nothing is applied until a person decides."})
+    run.pop("_evidence_log_path", None)
+    return jsonify(status="ok", run=run, agentic_trace=trace)
+
+
+@app.post("/multi-agent/review")
+def multi_agent_review():
+    """Pass the human decision (approve / correct / partial / reject) to the Multi-Agent Server."""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("run_id") or data.get("decision") not in HUMAN_DECISIONS:
+        return jsonify(status="rejected",
+                       error="run_id and decision (approve, correct, partial or reject) are required."), 400
+    if not MULTI_AGENT_ENABLED:
+        return jsonify(status="disabled", error="Multi-Agent is disabled in this environment."), 503
+    payload = {k: data.get(k) for k in ("run_id", "decision", "notes", "corrected_output") if data.get(k) is not None}
+    try:
+        resp = requests.post(f"{MULTI_AGENT_URL}/multi-agent/review", json=payload, timeout=15)
+        body = resp.json()
+    except Exception as exc:
+        return jsonify(status="unavailable", error=f"Multi-Agent Server unreachable: {exc}"), 502
+    if resp.status_code >= 400:
+        return jsonify(status="error", error=body.get("error", "review failed")), resp.status_code
+    body.pop("_evidence_log_path", None)
+    return jsonify(status="ok", run=body)
+
+
 REFUSAL = re.compile(
     r"(can(?:no|\u2019|')t|unable to|not able to|won't)[^.]*\b(financial|investment)\b[^.]*advice"
     r"|not a (licensed |certified )?financial (advisor|adviser)"
@@ -309,4 +385,4 @@ def ai_analyze_risk():
     return jsonify(output=summary, agentic_trace=trace)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002)
+    app.run(host="0.0.0.0", port=5002)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note

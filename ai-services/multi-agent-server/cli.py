@@ -12,6 +12,7 @@ script is for driving a run start-to-finish by hand.
 Run:
   python cli.py --market-id 559651 --source polymarket --feature watchlist
   python cli.py --market-id 559651 --source polymarket --submitted-value 0.2 --feature watchlist --decision approve
+  python cli.py --task-type review_portfolio --feature portfolio --portfolio-id 2   (Student 2)
 """
 import argparse
 import json
@@ -26,7 +27,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run one Multi-Agent (Planner/Worker/Reviewer/Human) cycle from the terminal.")
     parser.add_argument("--task-type", default="validate_market_action")
     parser.add_argument("--feature", default="watchlist", help="e.g. watchlist | portfolio | research-notes | market-analyst")
-    parser.add_argument("--market-id", required=True)
+    parser.add_argument("--market-id", default=None, help="Required for validate_market_action.")
+    parser.add_argument("--portfolio-id", type=int, default=None, help="Required for review_portfolio (Student 2).")
     parser.add_argument("--source", default="both", choices=["polymarket", "kalshi", "both"])
     parser.add_argument("--submitted-value", type=float, default=None)
     parser.add_argument("--decision", choices=["approve", "correct", "partial", "reject"], default=None,
@@ -34,7 +36,10 @@ def main():
     parser.add_argument("--notes", default=None)
     args = parser.parse_args()
 
-    params = {"feature": args.feature, "market_id": args.market_id, "source": args.source}
+    if args.task_type == "review_portfolio":
+        params = {"feature": args.feature, "portfolio_id": args.portfolio_id}
+    else:
+        params = {"feature": args.feature, "market_id": args.market_id, "source": args.source}
     if args.submitted_value is not None:
         params["submitted_value"] = args.submitted_value
 
