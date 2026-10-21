@@ -50,3 +50,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^student-1/
+
+  - repo: local
+    hooks:
+      - id: pytest-student-2
+        name: pytest (Student 2 endpoint tests)
+        entry: python -m pytest student-2/tests -q -p no:cacheprovider
+        language: system
+        pass_filenames: false
+        files: ^student-2/
