@@ -81,7 +81,7 @@ resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023
   name: 'ollamadata'
 }
 
-resource containerAppsEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
+resource containerAppsEnv 'Microsoft.App/managedEnvironments@2026-07-01' = {
   name: envName
   location: location
   properties: {
@@ -106,7 +106,7 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   }
 }
 
-resource home 'Microsoft.App/containerApps@2023-05-01' = {
+resource home 'Microsoft.App/containerApps@2026-07-01' = {
   name: '${namePrefix}-home'
   location: location
   properties: {
@@ -152,7 +152,7 @@ resource home 'Microsoft.App/containerApps@2023-05-01' = {
 }
 
 // Mount the Ollama model cache share into the environment
-resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = if (enableCloudAi) {
+resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2026-07-01' = if (enableCloudAi) {
   parent: containerAppsEnv
   name: 'ollamadata'
   properties: {
@@ -173,7 +173,7 @@ resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' =
 // Deployed only when enableCloudAi=true (see header comment) -- this is
 // the expensive part (2 vCPU / 4Gi always-on) so leaving it off by default
 // also avoids burning cost nobody asked for.
-resource ollama 'Microsoft.App/containerApps@2023-05-01' = if (enableCloudAi) {
+resource ollama 'Microsoft.App/containerApps@2026-07-01' = if (enableCloudAi) {
   name: '${namePrefix}-ollama'
   location: location
   properties: {
@@ -225,7 +225,7 @@ resource ollama 'Microsoft.App/containerApps@2023-05-01' = if (enableCloudAi) {
 
 // AI-Mode: internal only, talks to Ollama. Deployed only when
 // enableCloudAi=true (see header comment).
-resource aiMode 'Microsoft.App/containerApps@2023-05-01' = if (enableCloudAi) {
+resource aiMode 'Microsoft.App/containerApps@2026-07-01' = if (enableCloudAi) {
   name: '${namePrefix}-ai-mode'
   location: location
   properties: {
