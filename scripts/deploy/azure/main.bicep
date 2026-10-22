@@ -3,15 +3,22 @@
 // the shared "home" landing page, and (via the student-service module)
 // each student's backend + frontend containers.
 //
-// AI-Mode / MCP / RAG / Multi-Agent Server are deliberately NOT deployed
-// here -- they stay local/non-containerised per the Release 2 spec. Each
-// backend already falls back gracefully when those URLs are unreachable
-// (same behaviour already verified in CI -- see .github/workflows/*.yml).
+// MCP / RAG / Multi-Agent Server are never deployed here -- they stay
+// local/non-containerised per the Release 2 spec, full stop.
+//
+// AI-Mode + Ollama are DISABLED BY DEFAULT (enableCloudAi = false), per the
+// Release 2 "Cloud Baseline" rule: AI-Mode must be disabled by default in
+// the required cloud deployment. Each backend already falls back
+// gracefully when AI_MODE_URL is unset/unreachable (same behaviour already
+// verified in CI -- see .github/workflows/*.yml). Set enableCloudAi=true
+// (az deployment group create ... --parameters enableCloudAi=true) only to
+// deliberately claim Bonus B1 (Cloud AI-Mode) -- never as the default path.
 
 param location string = resourceGroup().location
 param namePrefix string = 'group29r2'
 param imageTag string = 'latest'
 param llmModel string = 'llama3.2:3b'
+param enableCloudAi bool = false
 
 var acrName = '${namePrefix}acr'
 var logAnalyticsName = '${namePrefix}-logs'
@@ -69,7 +76,7 @@ resource s4Share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-
   name: 's4data'
 }
 
-resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
+resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = if (enableCloudAi) {
   parent: fileServices
   name: 'ollamadata'
 }
@@ -134,7 +141,7 @@ resource home 'Microsoft.App/containerApps@2023-05-01' = {
 }
 
 // Mount the Ollama model cache share into the environment
-resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = if (enableCloudAi) {
   parent: containerAppsEnv
   name: 'ollamadata'
   properties: {
@@ -152,7 +159,10 @@ resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' =
 
 // Ollama runtime: internal only. Pulls the approved LLM on startup and
 // caches it on the Azure Files share so restarts do not re-download it.
-resource ollama 'Microsoft.App/containerApps@2023-05-01' = {
+// Deployed only when enableCloudAi=true (see header comment) -- this is
+// the expensive part (2 vCPU / 4Gi always-on) so leaving it off by default
+// also avoids burning cost nobody asked for.
+resource ollama 'Microsoft.App/containerApps@2023-05-01' = if (enableCloudAi) {
   name: '${namePrefix}-ollama'
   location: location
   properties: {
@@ -202,8 +212,9 @@ resource ollama 'Microsoft.App/containerApps@2023-05-01' = {
   ]
 }
 
-// AI-Mode: internal only, talks to Ollama
-resource aiMode 'Microsoft.App/containerApps@2023-05-01' = {
+// AI-Mode: internal only, talks to Ollama. Deployed only when
+// enableCloudAi=true (see header comment).
+resource aiMode 'Microsoft.App/containerApps@2023-05-01' = if (enableCloudAi) {
   name: '${namePrefix}-ai-mode'
   location: location
   properties: {
@@ -237,7 +248,7 @@ resource aiMode 'Microsoft.App/containerApps@2023-05-01' = {
           env: [
             {
               name: 'OLLAMA_HOST'
-              value: 'https://${ollama.properties.configuration.ingress.fqdn}'
+              value: 'https://${ollama.?properties.?configuration.?ingress.?fqdn}'
             }
             {
               name: 'LLM_MODEL'
@@ -258,6 +269,10 @@ resource aiMode 'Microsoft.App/containerApps@2023-05-01' = {
   }
 }
 
+// Empty string when disabled (the default) -- each backend's own fallback
+// logic treats a missing/unreachable AI_MODE_URL as "AI-Mode off" already.
+var aiModeUrl = enableCloudAi ? 'https://${aiMode.?properties.?configuration.?ingress.?fqdn}' : ''
+
 module student1 'modules/student-service.bicep' = {
   name: 'student1Deploy'
   params: {
@@ -272,7 +287,7 @@ module student1 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's1data'
-    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
+    aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
@@ -295,7 +310,7 @@ module student2 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's2data'
-    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
+    aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
@@ -318,7 +333,7 @@ module student3 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's3data'
-    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
+    aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
@@ -341,7 +356,7 @@ module student4 'modules/student-service.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     fileShareName: 's4data'
-    aiModeUrl: 'https://${aiMode.properties.configuration.ingress.fqdn}'
+    aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
