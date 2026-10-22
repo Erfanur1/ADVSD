@@ -1,39 +1,22 @@
-// Reusable module: one student's backend + frontend Container Apps,
-// plus the Azure Files mount that backs their SQLite database.
+// Reusable module: one student's backend + frontend Container Apps.
 // Called once per student from main.bicep.
+//
+// No Azure Files / volume mount here -- see main.bicep's persistence note.
+// Each backend's SQLite DB lives on the container's own ephemeral local
+// disk; init_db.py recreates and reseeds it on every container start.
 
 param studentId string
 param studentName string
 param containerAppsEnvironmentId string
-param containerAppsEnvironmentName string
 param acrLoginServer string
 param imageName string
 param backendPort int
 param frontendPort int
-param storageAccountName string
 param aiModeUrl string
-
-@secure()
-param storageAccountKey string
-
-param fileShareName string
 param acrUsername string
 
 @secure()
 param acrPassword string
-
-// Mount this student's Azure Files share into the Container Apps environment
-resource envStorage 'Microsoft.App/managedEnvironments/storages@2026-07-01' = {
-  name: '${containerAppsEnvironmentName}/${fileShareName}'
-  properties: {
-    azureFile: {
-      accountName: storageAccountName
-      accountKey: storageAccountKey
-      shareName: fileShareName
-      accessMode: 'ReadWrite'
-    }
-  }
-}
 
 resource backend 'Microsoft.App/containerApps@2026-07-01' = {
   name: '${studentName}-backend'
@@ -82,19 +65,6 @@ resource backend 'Microsoft.App/containerApps@2026-07-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          volumeMounts: [
-            {
-              volumeName: 'dbstorage'
-              mountPath: '/data'
-            }
-          ]
-        }
-      ]
-      volumes: [
-        {
-          name: 'dbstorage'
-          storageType: 'AzureFile'
-          storageName: fileShareName
         }
       ]
       scale: {
@@ -103,9 +73,6 @@ resource backend 'Microsoft.App/containerApps@2026-07-01' = {
       }
     }
   }
-  dependsOn: [
-    envStorage
-  ]
 }
 
 resource frontend 'Microsoft.App/containerApps@2026-07-01' = {
