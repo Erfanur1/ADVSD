@@ -4,16 +4,35 @@ Deploys the Prediction Market Intelligence Hub to **Azure Container Apps**.
 
 ## What gets deployed (and what doesn't)
 
-Deployed: the shared `home` landing page, all 4 students' backend +
-frontend containers, **AI-Mode**, and the **Ollama runtime with the
-approved LLM** (11 containers total). Each backend's SQLite database
-is persisted via an Azure Files share, and Ollama's downloaded model
-is cached on its own share.
+Deployed by default: the shared `home` landing page and all 4
+students' backend + frontend containers (9 containers). Each
+backend's SQLite database is persisted via an Azure Files share.
 
-NOT deployed (disabled in the cloud, per the Release 2 spec):
-`mcp-server`, `rag-server` and `multi-agent-server`. Backends already
-fall back gracefully when those URLs are unreachable, so leaving
-`MCP_URL` / `RAG_URL` unset keeps them disabled.
+**Disabled by default, per the Release 2 "Cloud Baseline" rule**:
+`mcp-server`, `rag-server`, `multi-agent-server` -- never deployed at
+all, full stop -- and **AI-Mode + Ollama**, which are deployed only
+when explicitly opted into (see below). Backends already fall back
+gracefully when `AI_MODE_URL` / `MCP_URL` / `RAG_URL` are unset or
+unreachable, so the default run is fully spec-compliant.
+
+### Opting in to Bonus B1 (Cloud AI-Mode)
+
+Pass `enableCloudAi=true` to deploy the Ollama + AI-Mode Container
+Apps and wire every backend's `AI_MODE_URL` to the real thing:
+
+```
+az deployment group create \
+  --resource-group "$RESOURCE_GROUP" --name main \
+  --template-file scripts/deploy/azure/main.bicep \
+  --parameters namePrefix="$NAME_PREFIX" imageTag="$IMAGE_TAG" enableCloudAi=true
+```
+
+Do this as a deliberate, separate step when you're ready to record
+the Bonus B1 evidence -- never as the default path, or it costs the
+required Criterion 7 marks (AI-Mode must be disabled by default).
+Ollama is the expensive part (2 vCPU / 4Gi always-on), so turn it back
+off (redeploy with `enableCloudAi=false`, the default) once you've
+captured the demo evidence.
 
 ## One-time setup
 
