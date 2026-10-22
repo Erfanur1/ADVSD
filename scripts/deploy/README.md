@@ -6,7 +6,27 @@ Deploys the Prediction Market Intelligence Hub to **Azure Container Apps**.
 
 Deployed by default: the shared `home` landing page and all 4
 students' backend + frontend containers (9 containers). Each
-backend's SQLite database is persisted via an Azure Files share.
+backend's SQLite database lives on the container's own **ephemeral**
+local disk, not a persistent volume -- `init_db.py` already recreates
+and reseeds it on every container start, so this costs nothing
+functionally (CRUD against seeded mock data works fine while a
+container is running), only a guarantee that nobody asked for (data
+surviving a restart/redeploy).
+
+**Why no Azure Files**: this subscription's Container Apps environment
+is an "Express" environment (Azure's current default without VNet
+integration), and Express environments categorically do not support
+Storage-backed volumes -- confirmed directly, both via a fresh
+reference environment created through `az containerapp env create
+--enable-workload-profiles true` and via `az containerapp env storage
+set` against the real environment, same
+`ExpressEnvironmentResourceNotSupported` error either way, regardless
+of the environment's declared `workloadProfiles` or an individual
+Container App's `workloadProfileName`. Getting a Storage-capable
+environment needs full VNet integration (a virtual network + subnet
+wired into `vnetConfiguration`) -- a substantially bigger
+infrastructure addition, out of scope here since persistence isn't
+actually required by the brief.
 
 **Disabled by default, per the Release 2 "Cloud Baseline" rule**:
 `mcp-server`, `rag-server`, `multi-agent-server` -- never deployed at
@@ -32,7 +52,10 @@ the Bonus B1 evidence -- never as the default path, or it costs the
 required Criterion 7 marks (AI-Mode must be disabled by default).
 Ollama is the expensive part (2 vCPU / 4Gi always-on), so turn it back
 off (redeploy with `enableCloudAi=false`, the default) once you've
-captured the demo evidence.
+captured the demo evidence. Note Ollama has no persistent model cache
+(see the persistence note above) -- it re-pulls the model on every
+cold start, a couple of minutes of startup time before AI-Mode is
+actually reachable.
 
 ## One-time setup
 

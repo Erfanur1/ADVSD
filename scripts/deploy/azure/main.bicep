@@ -13,6 +13,25 @@
 // verified in CI -- see .github/workflows/*.yml). Set enableCloudAi=true
 // (az deployment group create ... --parameters enableCloudAi=true) only to
 // deliberately claim Bonus B1 (Cloud AI-Mode) -- never as the default path.
+//
+// NOTE on persistence: there is deliberately no Azure Files / persistent
+// volume anywhere in this template. This subscription's Container Apps
+// environment is an "Express" environment (the current Azure default
+// without VNet integration), and Express environments categorically do not
+// support Storage-backed volumes -- confirmed directly against this
+// subscription, both via a plain `az containerapp env create
+// --enable-workload-profiles true` reference environment and via
+// `az containerapp env storage set` against this exact environment, same
+// ExpressEnvironmentResourceNotSupported error either way. Getting a
+// Storage-capable environment requires full VNet integration (a
+// virtual network + subnet wired into the environment's vnetConfiguration),
+// a substantially bigger infra addition. Since all data in this project is
+// seeded mock data and the brief only requires operational CRUD (not
+// persistence across restarts), each backend's SQLite DB simply lives on
+// the container's own ephemeral local disk -- init_db.py already
+// recreates and reseeds it on every container start, so this costs
+// nothing functionally, only survives-a-restart guarantees nobody asked
+// for in the cloud deployment.
 
 param location string = resourceGroup().location
 param namePrefix string = 'group29r2'
@@ -23,7 +42,6 @@ param enableCloudAi bool = false
 var acrName = '${namePrefix}acr'
 var logAnalyticsName = '${namePrefix}-logs'
 var envName = '${namePrefix}-env'
-var storageAccountName = toLower('${namePrefix}st${uniqueString(resourceGroup().id)}')
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: logAnalyticsName
@@ -43,44 +61,6 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: storageAccountName
-  location: location
-  sku: { name: 'Standard_LRS' }
-  kind: 'StorageV2'
-  properties: {
-    minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
-  }
-}
-
-resource fileServices 'Microsoft.Storage/storageAccounts/fileServices@2023-01-01' = {
-  parent: storageAccount
-  name: 'default'
-}
-
-resource s1Share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
-  parent: fileServices
-  name: 's1data'
-}
-resource s2Share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
-  parent: fileServices
-  name: 's2data'
-}
-resource s3Share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
-  parent: fileServices
-  name: 's3data'
-}
-resource s4Share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
-  parent: fileServices
-  name: 's4data'
-}
-
-resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = if (enableCloudAi) {
-  parent: fileServices
-  name: 'ollamadata'
-}
-
 resource containerAppsEnv 'Microsoft.App/managedEnvironments@2026-07-01' = {
   name: envName
   location: location
@@ -92,17 +72,6 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2026-07-01' = {
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
-    // Explicit workload profile -- without this, Azure defaults a new
-    // environment to the lightweight "Express" tier, which does not
-    // support Storage-backed volumes at all (each student backend mounts
-    // an Azure Files share for its SQLite DB). 'Consumption' keeps the
-    // same serverless/pay-per-use billing, just not the Express subset.
-    workloadProfiles: [
-      {
-        name: 'Consumption'
-        workloadProfileType: 'Consumption'
-      }
-    ]
   }
 }
 
@@ -151,28 +120,10 @@ resource home 'Microsoft.App/containerApps@2026-07-01' = {
   }
 }
 
-// Mount the Ollama model cache share into the environment
-resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2026-07-01' = if (enableCloudAi) {
-  parent: containerAppsEnv
-  name: 'ollamadata'
-  properties: {
-    azureFile: {
-      accountName: storageAccount.name
-      accountKey: storageAccount.listKeys().keys[0].value
-      shareName: 'ollamadata'
-      accessMode: 'ReadWrite'
-    }
-  }
-  dependsOn: [
-    ollamaShare
-  ]
-}
-
-// Ollama runtime: internal only. Pulls the approved LLM on startup and
-// caches it on the Azure Files share so restarts do not re-download it.
-// Deployed only when enableCloudAi=true (see header comment) -- this is
-// the expensive part (2 vCPU / 4Gi always-on) so leaving it off by default
-// also avoids burning cost nobody asked for.
+// Ollama runtime: internal only. Deployed only when enableCloudAi=true (see
+// header comment). Re-pulls the LLM on every cold start (no persistent
+// model cache -- see the persistence note above), which costs a couple of
+// minutes of startup time but nothing else.
 resource ollama 'Microsoft.App/containerApps@2026-07-01' = if (enableCloudAi) {
   name: '${namePrefix}-ollama'
   location: location
@@ -197,19 +148,6 @@ resource ollama 'Microsoft.App/containerApps@2026-07-01' = if (enableCloudAi) {
             cpu: json('2')
             memory: '4Gi'
           }
-          volumeMounts: [
-            {
-              volumeName: 'ollamamodels'
-              mountPath: '/root/.ollama'
-            }
-          ]
-        }
-      ]
-      volumes: [
-        {
-          name: 'ollamamodels'
-          storageType: 'AzureFile'
-          storageName: 'ollamadata'
         }
       ]
       scale: {
@@ -218,9 +156,6 @@ resource ollama 'Microsoft.App/containerApps@2026-07-01' = if (enableCloudAi) {
       }
     }
   }
-  dependsOn: [
-    ollamaStorage
-  ]
 }
 
 // AI-Mode: internal only, talks to Ollama. Deployed only when
@@ -290,21 +225,14 @@ module student1 'modules/student-service.bicep' = {
     studentId: '1'
     studentName: 'student-1'
     containerAppsEnvironmentId: containerAppsEnv.id
-    containerAppsEnvironmentName: containerAppsEnv.name
     acrLoginServer: acr.properties.loginServer
     imageName: '${acr.properties.loginServer}/student1:${imageTag}'
     backendPort: 5001
     frontendPort: 5101
-    storageAccountName: storageAccount.name
-    storageAccountKey: storageAccount.listKeys().keys[0].value
-    fileShareName: 's1data'
     aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
-  dependsOn: [
-    s1Share
-  ]
 }
 
 module student2 'modules/student-service.bicep' = {
@@ -313,21 +241,14 @@ module student2 'modules/student-service.bicep' = {
     studentId: '2'
     studentName: 'student-2'
     containerAppsEnvironmentId: containerAppsEnv.id
-    containerAppsEnvironmentName: containerAppsEnv.name
     acrLoginServer: acr.properties.loginServer
     imageName: '${acr.properties.loginServer}/student2:${imageTag}'
     backendPort: 5002
     frontendPort: 5102
-    storageAccountName: storageAccount.name
-    storageAccountKey: storageAccount.listKeys().keys[0].value
-    fileShareName: 's2data'
     aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
-  dependsOn: [
-    s2Share
-  ]
 }
 
 module student3 'modules/student-service.bicep' = {
@@ -336,21 +257,14 @@ module student3 'modules/student-service.bicep' = {
     studentId: '3'
     studentName: 'student-3'
     containerAppsEnvironmentId: containerAppsEnv.id
-    containerAppsEnvironmentName: containerAppsEnv.name
     acrLoginServer: acr.properties.loginServer
     imageName: '${acr.properties.loginServer}/student3:${imageTag}'
     backendPort: 5003
     frontendPort: 5103
-    storageAccountName: storageAccount.name
-    storageAccountKey: storageAccount.listKeys().keys[0].value
-    fileShareName: 's3data'
     aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
-  dependsOn: [
-    s3Share
-  ]
 }
 
 module student4 'modules/student-service.bicep' = {
@@ -359,21 +273,14 @@ module student4 'modules/student-service.bicep' = {
     studentId: '4'
     studentName: 'student-4'
     containerAppsEnvironmentId: containerAppsEnv.id
-    containerAppsEnvironmentName: containerAppsEnv.name
     acrLoginServer: acr.properties.loginServer
     imageName: '${acr.properties.loginServer}/student4:${imageTag}'
     backendPort: 5004
     frontendPort: 5104
-    storageAccountName: storageAccount.name
-    storageAccountKey: storageAccount.listKeys().keys[0].value
-    fileShareName: 's4data'
     aiModeUrl: aiModeUrl
     acrUsername: acr.listCredentials().username
     acrPassword: acr.listCredentials().passwords[0].value
   }
-  dependsOn: [
-    s4Share
-  ]
 }
 
 output acrLoginServer string = acr.properties.loginServer
