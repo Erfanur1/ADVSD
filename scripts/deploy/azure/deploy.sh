@@ -71,12 +71,30 @@ echo "== 4. Re-deploy so Container Apps pick up the freshly built images =="
 # pass makes the apps pull the real image and go healthy. This is expected
 # -- not a bug -- the first pass's apps will briefly show a failed/pending
 # revision until this step runs.
-az deployment group create \
-  --resource-group "$RESOURCE_GROUP" \
-  --name main \
-  --template-file "$(dirname "$0")/main.bicep" \
-  --parameters namePrefix="$NAME_PREFIX" imageTag="$IMAGE_TAG" enableCloudAi="$ENABLE_CLOUD_AI" \
-  --output table
+#
+# Retried with a short wait, NOT run once: a freshly pushed image can
+# briefly 404 as "not found in the registry" from the Container Apps
+# control plane even though it's genuinely in ACR -- reproduced live
+# (confirmed the exact same image/registry/credentials pull fine via
+# plain `az containerapp create` run directly, immediately after the
+# same failure from this bicep deployment) -- ACR-push-to-Container-Apps
+# visibility propagation lag, not a real problem with the image/auth.
+for attempt in 1 2 3; do
+  if az deployment group create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name main \
+    --template-file "$(dirname "$0")/main.bicep" \
+    --parameters namePrefix="$NAME_PREFIX" imageTag="$IMAGE_TAG" enableCloudAi="$ENABLE_CLOUD_AI" \
+    --output table; then
+    break
+  elif [ "$attempt" = 3 ]; then
+    echo "Second pass still failing after 3 attempts -- a real problem, not propagation lag. Giving up."
+    exit 1
+  else
+    echo "(attempt $attempt failed -- likely still propagating, waiting 45s and retrying)"
+    sleep 45
+  fi
+done
 
 echo "== Deployment complete. URLs: =="
 az deployment group show --resource-group "$RESOURCE_GROUP" --name main --query "properties.outputs" -o json
