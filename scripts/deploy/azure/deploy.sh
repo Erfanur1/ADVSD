@@ -25,8 +25,16 @@ az deployment group create \
   --parameters namePrefix="$NAME_PREFIX" imageTag="$IMAGE_TAG" \
   --output table || echo "(expected: first pass fails until images exist in ACR -- continuing)"
 
-ACR_LOGIN_SERVER=$(az deployment group show --resource-group "$RESOURCE_GROUP" --name main --query "properties.outputs.acrLoginServer.value" -o tsv)
-ACR_NAME="${ACR_LOGIN_SERVER%%.*}"
+# Computed directly rather than read from the first pass's deployment
+# outputs: a *Failed* deployment (expected here -- see above) doesn't
+# populate `properties.outputs` via `az deployment group show`, so that
+# query silently returns empty, which then fails ACR's own name
+# validation ("Registry names may contain only alpha numeric characters
+# and must be between 5 and 50 characters") -- reproduced live. This
+# must exactly match main.bicep's `var acrName = '${namePrefix}acr'` and
+# ACR's standard `<name>.azurecr.io` login server format.
+ACR_NAME="${NAME_PREFIX}acr"
+ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
 
 echo "== 3. Build and push images to ACR: $ACR_NAME =="
 az acr build --registry "$ACR_NAME" --image "home:$IMAGE_TAG" ./shared
