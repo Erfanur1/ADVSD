@@ -17,10 +17,57 @@ fall back gracefully when those URLs are unreachable, so leaving
 
 ## One-time setup
 
+### Running `deploy.sh` by hand (local terminal)
+
 ```
 az login
 az account set --subscription "<your subscription>"
 ```
+
+### Running via `cloud-deployment.yml` (GitHub Actions)
+
+Authenticates with **GitHub OIDC federation to a user-assigned managed
+identity**, not a classic service-principal secret. This matters because
+`az ad sp create-for-rbac` (the usual approach, and what the brief's
+own example commands suggest) needs Entra ID "register applications"
+permission -- **UTS's student Azure tenant blocks that for students**,
+Azure-for-Students Owner-on-the-subscription or not. A managed identity
+only needs ordinary subscription-level RBAC, which doesn't hit that
+restriction.
+
+One-time setup (done once against the target subscription/resource
+group -- already done for `group29-r2-rg`, keeping this here so it's
+reproducible if the group is ever recreated):
+
+```bash
+SUBSCRIPTION_ID="<subscription id>"
+RESOURCE_GROUP="group29-r2-rg"
+
+az group create --name "$RESOURCE_GROUP" --location australiaeast
+
+az identity create --name group29-r2-github-identity --resource-group "$RESOURCE_GROUP"
+# note the clientId + principalId from the output
+
+az role assignment create \
+  --assignee-object-id "<principalId from above>" \
+  --assignee-principal-type ServicePrincipal \
+  --role Contributor \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+
+az identity federated-credential create \
+  --name github-actions-main \
+  --identity-name group29-r2-github-identity \
+  --resource-group "$RESOURCE_GROUP" \
+  --issuer https://token.actions.githubusercontent.com \
+  --subject repo:Erfanur1/ADVSD:ref:refs/heads/main \
+  --audiences api://AzureADTokenExchange
+```
+
+Then add three GitHub Actions secrets (Settings -> Secrets and
+variables -> Actions): `AZURE_CLIENT_ID` (the identity's `clientId`),
+`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. No secret value to rotate --
+there's no long-lived credential, GitHub's OIDC token is exchanged for a
+short-lived Azure one at run time.
 
 ## Deploy
 
