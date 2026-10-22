@@ -24,6 +24,8 @@ def execute(plan, params):
         return _execute_validate_market_action(params)
     if plan["task_type"] == "review_portfolio":
         return _execute_review_portfolio(plan)
+    if plan["task_type"] == "review_mispricing_analysis":
+        return _execute_review_mispricing_analysis(plan)
     raise ValueError(f"Worker has no executor for task_type '{plan['task_type']}'")
 
 
@@ -121,5 +123,41 @@ def _execute_review_portfolio(plan):
         "mcp_reachable": validation is not None or exposure is not None,
         "validation": validation,
         "exposure": exposure,
+        "notes": notes,
+    }
+
+
+# ---------------- Student 4: AI Market Analyst Assistant ----------------
+def _execute_review_mispricing_analysis(plan):
+    evidence_gathered, notes = [], []
+
+    comparison_result, note = _call_mcp(
+        "compare_markets",
+        {"polymarket_id": plan["polymarket_id"], "kalshi_ticker": plan["kalshi_ticker"]},
+    )
+    if note:
+        notes.append(note)
+        return {
+            "evidence_gathered": evidence_gathered,
+            "mcp_reachable": False,
+            "polymarket": None,
+            "kalshi": None,
+            "comparison": None,
+            "notes": notes,
+        }
+
+    poly, kalshi, cmp = (comparison_result[k] for k in ("polymarket", "kalshi", "comparison"))
+    evidence_gathered.append(
+        f"compare_markets: {poly['title']} ({poly['probability']:.1%}) vs {kalshi['title']} "
+        f"({kalshi['probability']:.1%}) -> {cmp['status']}, {cmp['abs_gap_points']} pts apart, "
+        f"basis={cmp['basis']}."
+    )
+
+    return {
+        "evidence_gathered": evidence_gathered,
+        "mcp_reachable": True,
+        "polymarket": poly,
+        "kalshi": kalshi,
+        "comparison": cmp,
         "notes": notes,
     }

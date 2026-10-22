@@ -14,7 +14,7 @@ this task type as-is, or add a new one here if their feature needs a
 different kind of plan -- see the README for how to add one.
 """
 
-SUPPORTED_TASK_TYPES = ["validate_market_action", "review_portfolio"]
+SUPPORTED_TASK_TYPES = ["validate_market_action", "review_portfolio", "review_mispricing_analysis"]
 
 
 def create_plan(task_type, params):
@@ -26,6 +26,8 @@ def create_plan(task_type, params):
         return _plan_validate_market_action(params)
     if task_type == "review_portfolio":
         return _plan_review_portfolio(params)
+    if task_type == "review_mispricing_analysis":
+        return _plan_review_mispricing_analysis(params)
     raise ValueError(
         f"unknown task_type '{task_type}'. Supported: {SUPPORTED_TASK_TYPES}"
     )
@@ -98,5 +100,38 @@ def _plan_review_portfolio(params):
         "required_evidence": [
             f"validate_portfolio result for portfolio {portfolio_id} (valid flag, errors, warnings, totals).",
             "get_exposure_summary result (total exposure and share per category).",
+        ],
+    }
+
+
+# ---------------- Student 4: AI Market Analyst Assistant ----------------
+def _plan_review_mispricing_analysis(params):
+    """
+    Plan a review of one cross-exchange mispricing signal before a person
+    acts on it (e.g. before saving it as an analysis or trading on it).
+    Evidence comes from re-running Student 4's own read-only MCP tool --
+    the client's numbers are never trusted, same as /mispricing/save.
+    """
+    feature = params.get("feature", "market-analyst")
+    polymarket_id = str(params.get("polymarket_id") or "").strip()
+    kalshi_ticker = str(params.get("kalshi_ticker") or "").strip()
+    if not polymarket_id or not kalshi_ticker:
+        raise ValueError(
+            "params.polymarket_id and params.kalshi_ticker are required for review_mispricing_analysis"
+        )
+
+    return {
+        "task_type": "review_mispricing_analysis",
+        "feature": feature,
+        "polymarket_id": polymarket_id,
+        "kalshi_ticker": kalshi_ticker,
+        "steps": [
+            f"Re-fetch Polymarket '{polymarket_id}' and Kalshi '{kalshi_ticker}' live and compare them "
+            "with the MCP compare_markets tool, never trusting client-submitted numbers.",
+            "Report the gap size, pricing basis (live order book vs last-trade) and direction for the Reviewer.",
+        ],
+        "required_evidence": [
+            f"compare_markets result for {polymarket_id} vs {kalshi_ticker} "
+            "(status, gap, abs_gap_points, basis, direction).",
         ],
     }

@@ -11,6 +11,7 @@ rubber stamp.
 
 DRIFT_WARN_THRESHOLD = 0.05  # 5 probability points
 CATEGORY_CONCENTRATION_LIMIT = 0.5  # Student 2: one category > 50% of total exposure
+LARGE_GAP_WARN_THRESHOLD = 20.0  # Student 4: a gap this big is more likely a market-definition mismatch
 
 
 def review(plan, worker_output):
@@ -20,6 +21,8 @@ def review(plan, worker_output):
     """
     if plan.get("task_type") == "review_portfolio":
         return _review_portfolio(plan, worker_output)
+    if plan.get("task_type") == "review_mispricing_analysis":
+        return _review_mispricing_analysis(plan, worker_output)
 
     risks = []
     evidence_satisfied = True
@@ -55,6 +58,51 @@ def review(plan, worker_output):
     else:
         recommendation = "approve"
         confidence = "High"
+
+    return {
+        "risks": risks,
+        "recommendation": recommendation,
+        "confidence": confidence,
+        "evidence_satisfied": evidence_satisfied,
+    }
+
+
+# ---------------- Student 4: AI Market Analyst Assistant ----------------
+def _review_mispricing_analysis(plan, worker_output):
+    risks = []
+    comparison = worker_output.get("comparison")
+    evidence_satisfied = worker_output.get("mcp_reachable", False) and comparison is not None
+
+    for note in worker_output.get("notes", []):
+        risks.append(note)
+    if not evidence_satisfied:
+        risks.append("MCP server was unreachable, so the comparison could not be re-checked live.")
+        return {
+            "risks": risks,
+            "recommendation": "reject_insufficient_evidence",
+            "confidence": "Low",
+            "evidence_satisfied": False,
+        }
+
+    status = comparison["status"]
+    if comparison["basis"].startswith("last-trade"):
+        risks.append(
+            "Based on last-trade prices, not a live order book (one side's book was incomplete) -- "
+            "treat the gap as indicative only, not an executable price."
+        )
+    if comparison["abs_gap_points"] > LARGE_GAP_WARN_THRESHOLD:
+        risks.append(
+            f"Unusually large gap ({comparison['abs_gap_points']} pts, threshold {LARGE_GAP_WARN_THRESHOLD}) -- "
+            "verify both markets resolve on the exact same event/terms before acting; large gaps are often "
+            "a market-definition mismatch, not real mispricing."
+        )
+
+    if status == "fair":
+        recommendation, confidence = "reject_not_actionable", "High"
+    elif status == "mispriced" and not risks:
+        recommendation, confidence = "approve", "High"
+    else:
+        recommendation, confidence = "approve_with_caution", "Medium"
 
     return {
         "risks": risks,
