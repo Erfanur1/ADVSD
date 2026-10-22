@@ -42,22 +42,20 @@ jobs:
         run: |
           all_green=true
           for wf in student-1.yml student-2.yml student-3.yml student-4.yml; do
-            # `gh run list --workflow` intermittently returns an empty
-            # result for a workflow that genuinely has a successful run on
-            # main (observed directly -- the same query against the raw
-            # REST API is consistent, only this gh CLI path flakes). Retry
-            # a few times before accepting an empty/non-success result as
-            # real, so a transient API hiccup doesn't wrongly skip
-            # deployment.
-            result=""
-            for attempt in 1 2 3; do
-              result=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$wf" \
-                --branch main --status completed --limit 1 \
-                --json conclusion --jq '.[0].conclusion')
-              [ "$result" = "success" ] && break
-              sleep 3
-            done
-            echo "$wf latest completed run on main: ${result:-none}"
+            # GitHub's Actions-runs API is unreliable specifically when
+            # filtered server-side by branch+status (`?branch=main&status=
+            # success`, or gh CLI's `--branch --status` equivalent) --
+            # reproduced live, repeatedly: identical requests seconds apart
+            # randomly return 0 results for a workflow that genuinely has
+            # a passing run on main. A retry loop on that same filtered
+            # query did NOT fix it (all 4 came back empty on one run even
+            # after 3 retries). The plain, unfiltered listing (newest
+            # runs first, no query-string filter) has been completely
+            # consistent across dozens of repeated calls -- filter for
+            # head_branch==main client-side with jq instead.
+            result=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/runs?per_page=20" \
+              | jq -r '[.workflow_runs[] | select(.head_branch=="main" and .status=="completed")] | .[0].conclusion // "none"')
+            echo "$wf latest completed run on main: $result"
             if [ "$result" != "success" ]; then
               all_green=false
             fi
