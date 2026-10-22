@@ -34,15 +34,38 @@ jobs:
           python -m py_compile "student-3/backend/init_db.py"
           python -m py_compile "student-3/frontend/app.py"
 
-      - name: Confirm MCP/RAG disabled in CI (unreachable local URLs)
+      - name: Confirm MCP/RAG/Multi-Agent disabled in CI (unreachable local URLs)
         run: |
-          echo "MCP_URL and RAG_URL are not set in CI, so they default to localhost ports with no live servers running."
+          echo "MCP_URL, RAG_URL and MULTI_AGENT_URL are not set in CI, so they default to localhost ports with no live servers running."
           echo "This intentionally exercises the graceful-fallback path rather than live MCP/RAG calls."
 
-      - name: Run pytest
+      - name: Pre-commit validation (pytest)
         run: |
           cd "student-3"
           python -m pytest tests/ -v
 
       - name: Build Docker image
         run: docker build -t student-3-image "./student-3"
+
+  post-commit-ai-unit-testing:
+    needs: build-and-validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install requests
+      - name: AI-assisted unit test suggestions (skips cleanly if AI-Mode is unreachable)
+        working-directory: student-3
+        env:
+          AI_MODE_URL: ${{ secrets.AI_MODE_URL || 'http://localhost:8000' }}
+        run: python tests/ai_assisted_tests.py
+      - name: Upload AI test suggestions
+        uses: actions/upload-artifact@v4
+        with:
+          name: student-3-ai-test-suggestions
+          path: student-3/ai_test_suggestions.md
+          if-no-files-found: ignore
