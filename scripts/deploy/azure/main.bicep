@@ -92,6 +92,17 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
+    // Explicit workload profile -- without this, Azure defaults a new
+    // environment to the lightweight "Express" tier, which does not
+    // support Storage-backed volumes at all (each student backend mounts
+    // an Azure Files share for its SQLite DB). 'Consumption' keeps the
+    // same serverless/pay-per-use billing, just not the Express subset.
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
   }
 }
 
