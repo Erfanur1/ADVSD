@@ -1,5 +1,7 @@
+import logging
 import os
 import requests
+from markupsafe import escape
 from flask import Flask, render_template_string, request
 from dotenv import load_dotenv
 
@@ -7,6 +9,7 @@ load_dotenv()
 
 app = Flask(__name__)
 API = os.getenv("BACKEND_URL", "http://student-3-backend:5003")
+log = logging.getLogger(__name__)
 
 PAGE = """
 <!doctype html>
@@ -136,6 +139,21 @@ PAGE = """
     </div>
   </section>
 
+  <section>
+    <h2>Fact-check a note (Multi-Agent)</h2>
+    <div class="sr-briefing-panel">
+      <p class="sr-empty">A Planner, Worker and Reviewer agent check a note's claim against a live market. You make the final call.</p>
+      <form hx-post="/ma-validate" hx-target="#ma-out" hx-indicator="#ma-loading">
+        <input name="note_id" placeholder="Note ID" required style="width:90px">
+        <input name="market_id" placeholder="Live market ID (from search above)" required style="width:40%;max-width:300px">
+        <input name="claimed_probability" placeholder="Claimed probability, e.g. 0.45" style="width:200px">
+        <button type="submit">Run check</button>
+      </form>
+      <span id="ma-loading" class="htmx-indicator sr-empty">Agents working&hellip;</span>
+      <div id="ma-out"></div>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>
@@ -226,8 +244,8 @@ def notes_add():
     }
     try:
         requests.post(f"{API}/notes", json=payload, timeout=10)
-    except Exception:
-        pass
+    except requests.RequestException as exc:
+        log.warning("Backend call failed: %s", exc)
     return notes_list()
 
 
@@ -235,8 +253,8 @@ def notes_add():
 def notes_quick_add(article_id):
     try:
         requests.post(f"{API}/notes", json={"article_id": article_id, "title": "", "content": "", "tags": ""}, timeout=10)
-    except Exception:
-        pass
+    except requests.RequestException as exc:
+        log.warning("Backend call failed: %s", exc)
     return notes_list()
 
 
@@ -244,8 +262,8 @@ def notes_quick_add(article_id):
 def notes_delete(nid):
     try:
         requests.delete(f"{API}/notes/{nid}", timeout=10)
-    except Exception:
-        pass
+    except requests.RequestException as exc:
+        log.warning("Backend call failed: %s", exc)
     return notes_list()
 
 
@@ -258,8 +276,8 @@ def notes_update(nid):
     }
     try:
         requests.put(f"{API}/notes/{nid}", json=payload, timeout=10)
-    except Exception:
-        pass
+    except requests.RequestException as exc:
+        log.warning("Backend call failed: %s", exc)
     return notes_list()
 
 
@@ -346,5 +364,60 @@ def rag_ask():
     """
 
 
+
+def render_ma_run(run):
+    review = run.get("review", {})
+    risks = "".join(f'<div class="sr-article-source">&middot; {escape(r)}</div>' for r in review.get("risks", []))
+    evidence = "".join(f'<div class="sr-article-source">&middot; {escape(e)}</div>' for e in run.get("worker_output", {}).get("evidence_gathered", []))
+    rid = escape(run.get("run_id", ""))
+    buttons = "".join(
+        f'<button hx-post="/ma-review" hx-vals=\'{{"run_id": "{rid}", "decision": "{d}"}}\' hx-target="#ma-out">{d.title()}</button> '
+        for d in ("approve", "partial", "reject")
+    )
+    return f"""
+    <div class="sr-rag-grounded">
+      <strong>Reviewer recommendation: {escape(review.get("recommendation", "n/a"))}</strong>
+      <p class="sr-article-source">Confidence: {escape(review.get("confidence", "n/a"))} &middot; run {rid}</p>
+      {evidence}{risks}
+      <p style="margin-top:10px">Human review &mdash; nothing is applied until you decide:</p>
+      {buttons}
+    </div>
+    """
+
+
+@app.post("/ma-validate")
+def ma_validate():
+    payload = {
+        "note_id": request.form.get("note_id", "").strip(),
+        "market_id": request.form.get("market_id", "").strip(),
+        "claimed_probability": request.form.get("claimed_probability", "").strip(),
+    }
+    try:
+        resp = requests.post(f"{API}/multi-agent/validate", json=payload, timeout=40)
+        data = resp.json()
+    except (requests.RequestException, ValueError):
+        return '<p class="sr-empty">Couldn\'t reach the backend. Try again shortly.</p>'
+    if resp.status_code >= 400:
+        return f'<p class="sr-empty">{escape(data.get("error", "Request failed."))}</p>'
+    if not data.get("available"):
+        return '''<div class="sr-rag-insufficient"><strong>Multi-Agent Server unavailable</strong>
+        <p>No check was run. It is disabled in CI and the cloud build.</p></div>'''
+    return render_ma_run(data["run"])
+
+
+@app.post("/ma-review")
+def ma_review():
+    payload = {"run_id": request.form.get("run_id", ""), "decision": request.form.get("decision", "")}
+    try:
+        resp = requests.post(f"{API}/multi-agent/review", json=payload, timeout=20)
+        data = resp.json()
+    except (requests.RequestException, ValueError):
+        return '<p class="sr-empty">Couldn\'t reach the Multi-Agent Server.</p>'
+    if resp.status_code >= 400:
+        return f'<p class="sr-empty">{escape(data.get("error", "Decision failed."))}</p>'
+    return f'''<div class="sr-rag-grounded"><strong>Decision recorded: {escape(data.get("status", ""))}</strong>
+    <p class="sr-article-source">Run {escape(data.get("run_id", ""))} &middot; decision: {escape(str((data.get("human_decision") or {}).get("decision", "")))}</p></div>'''
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5103)
+    app.run(host="0.0.0.0", port=5103)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note

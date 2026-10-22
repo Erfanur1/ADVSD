@@ -11,6 +11,7 @@ DB_PATH = os.getenv("DB_PATH", "/data/student3.db")
 AI_MODE_URL = os.getenv("AI_MODE_URL", "http://ai-mode:8000")
 MCP_URL = os.getenv("MCP_URL", "http://localhost:8100")
 RAG_URL = os.getenv("RAG_URL", "http://localhost:8200")
+MULTI_AGENT_URL = os.getenv("MULTI_AGENT_URL", "http://localhost:8300")
 
 
 def db():
@@ -123,10 +124,15 @@ def list_notes():
 @app.post("/notes")
 def add_note():
     data = request.get_json(force=True) or {}
+    article_id = data.get("article_id")
+    if article_id in (None, ""):
+        return jsonify(error="article_id is required"), 400
     conn = db()
+    if conn.execute("SELECT 1 FROM news_articles WHERE id=?", (article_id,)).fetchone() is None:
+        return jsonify(error=f"article {article_id} not found"), 404
     cur = conn.execute(
         "INSERT INTO research_notes (article_id, title, content, tags) VALUES (?,?,?,?)",
-        (data["article_id"], data.get("title", ""), data.get("content", ""), data.get("tags", "")),
+        (article_id, data.get("title", ""), data.get("content", ""), data.get("tags", "")),
     )
     conn.commit()
     return jsonify(id=cur.lastrowid), 201
@@ -280,5 +286,95 @@ def rag_ask():
                     insufficient_context=insufficient, agentic_trace=trace)
 
 
+# ---- Multi-Agent: Planner / Worker / Reviewer + human review ----
+# Fact-checks a research note against live market data. The shared Multi-Agent
+# Server plans the check, gathers live evidence through MCP, and a reviewer
+# agent recommends a decision. Nothing is applied until a person decides.
+@app.post("/multi-agent/validate")
+def multi_agent_validate():
+    """Ask the shared Multi-Agent Server to check a research note's claim against a live market."""
+    trace = []
+    data = request.get_json(force=True) or {}
+    note_id = data.get("note_id")
+    market_id = data.get("market_id")
+    if note_id is None:
+        return jsonify(error="note_id is required"), 400
+    if not market_id:
+        return jsonify(error="market_id is required"), 400
+
+    claimed = data.get("claimed_probability")
+    if claimed in (None, ""):
+        claimed = None
+    else:
+        try:
+            claimed = float(claimed)
+        except (TypeError, ValueError):
+            return jsonify(error="claimed_probability must be a number between 0 and 1"), 400
+        if not 0 <= claimed <= 1:
+            return jsonify(error="claimed_probability must be a number between 0 and 1"), 400
+
+    row = db().execute(
+        "SELECT r.id, r.title, n.headline FROM research_notes r "
+        "JOIN news_articles n ON n.id = r.article_id WHERE r.id = ?",
+        (note_id,),
+    ).fetchone()
+    if row is None:
+        return jsonify(error=f"research note {note_id} not found"), 404
+
+    params = {
+        "feature": "research-notes",
+        "market_id": str(market_id),
+        "source": data.get("source", "both"),
+        "submitted_value": claimed,
+    }
+
+    # PLAN
+    label = row["title"] or row["headline"]
+    trace.append({"stage": "Plan", "detail": f"Decided to have the Multi-Agent Server check research note {note_id} ('{label}') against live market '{market_id}'."})
+
+    # ACT
+    trace.append({"stage": "Act", "detail": "Sent the task to the shared Multi-Agent Server (Planner, Worker, Reviewer)."})
+    run = None
+    try:
+        resp = requests.post(
+            f"{MULTI_AGENT_URL}/multi-agent/run",
+            json={"task_type": "validate_market_action", "params": params},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        run = resp.json()
+    except Exception:
+        run = None
+
+    # OBSERVE
+    if run:
+        rec = run.get("review", {}).get("recommendation")
+        trace.append({"stage": "Observe", "detail": f"Multi-Agent run {run.get('run_id')} is {run.get('status')} (reviewer recommendation: {rec})."})
+    else:
+        trace.append({"stage": "Observe", "detail": "Multi-Agent Server did not return a usable run."})
+
+    # ADAPT
+    if run:
+        trace.append({"stage": "Adapt", "detail": "Returned the run for the human review step; nothing is applied until a person approves."})
+    else:
+        trace.append({"stage": "Adapt", "detail": "Multi-Agent Server is unavailable (disabled in CI and the cloud build), so no check was run."})
+
+    return jsonify(run=run, available=run is not None, agentic_trace=trace)
+
+
+@app.post("/multi-agent/review")
+def multi_agent_review():
+    """Pass the human decision (approve / correct / partial / reject) to the Multi-Agent Server."""
+    data = request.get_json(force=True) or {}
+    if not data.get("run_id") or not data.get("decision"):
+        return jsonify(error="run_id and decision are required"), 400
+    try:
+        resp = requests.post(f"{MULTI_AGENT_URL}/multi-agent/review", json=data, timeout=15)
+        body = resp.json()
+    except Exception:
+        return jsonify(error="Multi-Agent Server is unavailable"), 503
+    return jsonify(body), resp.status_code
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5003)
+    app.run(host="0.0.0.0", port=5003)  # noqa: S104 -- required for Docker container networking; see Section 5 known-issue note
