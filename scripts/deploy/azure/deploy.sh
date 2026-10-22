@@ -10,12 +10,20 @@ echo "== 1. Resource group =="
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output table
 
 echo "== 2. Core infrastructure (ACR, storage, Container Apps environment, apps) =="
+# This first pass is EXPECTED to report failure: the Container Apps it
+# creates reference images that don't exist in ACR yet (chicken-and-egg --
+# need the registry to build into, need the apps to reference an image
+# once it exists), and Azure surfaces that as a deployment-level error
+# (exit code 1), not just an unhealthy revision. Tolerate it here and let
+# the second pass (after the real images are pushed) be the authoritative
+# check -- a genuine infra problem (bad bicep, permissions, quota) fails
+# there too, for real, uncaught.
 az deployment group create \
   --resource-group "$RESOURCE_GROUP" \
   --name main \
   --template-file "$(dirname "$0")/main.bicep" \
   --parameters namePrefix="$NAME_PREFIX" imageTag="$IMAGE_TAG" \
-  --output table
+  --output table || echo "(expected: first pass fails until images exist in ACR -- continuing)"
 
 ACR_LOGIN_SERVER=$(az deployment group show --resource-group "$RESOURCE_GROUP" --name main --query "properties.outputs.acrLoginServer.value" -o tsv)
 ACR_NAME="${ACR_LOGIN_SERVER%%.*}"
