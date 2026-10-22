@@ -23,7 +23,7 @@ param acrUsername string
 param acrPassword string
 
 // Mount this student's Azure Files share into the Container Apps environment
-resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+resource envStorage 'Microsoft.App/managedEnvironments/storages@2026-07-01' = {
   name: '${containerAppsEnvironmentName}/${fileShareName}'
   properties: {
     azureFile: {
@@ -35,7 +35,7 @@ resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   }
 }
 
-resource backend 'Microsoft.App/containerApps@2023-05-01' = {
+resource backend 'Microsoft.App/containerApps@2026-07-01' = {
   name: '${studentName}-backend'
   location: resourceGroup().location
   properties: {
@@ -108,7 +108,7 @@ resource backend 'Microsoft.App/containerApps@2023-05-01' = {
   ]
 }
 
-resource frontend 'Microsoft.App/containerApps@2023-05-01' = {
+resource frontend 'Microsoft.App/containerApps@2026-07-01' = {
   name: '${studentName}-frontend'
   location: resourceGroup().location
   properties: {
