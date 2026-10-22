@@ -386,8 +386,12 @@ def mispricing_compare():
         <button hx-post="/rag/ask" hx-vals="{escape(json.dumps({'query': question, 'market_ids': poly['id'] + ',' + kalshi['id']}))}"
                 hx-target="#rag-out" hx-swap="innerHTML" hx-indicator="#rag-loading"
                 onclick="document.getElementById('rag-out').scrollIntoView({{behavior:'smooth'}})">Explain this gap (RAG)</button>
+        <button hx-post="/multi-agent/validate" hx-vals="{escape(json.dumps(params))}"
+                hx-target="#ma-out" hx-swap="innerHTML" hx-indicator="#ma-loading">Run Multi-Agent Review</button>
       </div>
       <div id="save-status" class="result"></div>
+      <span id="ma-loading" class="htmx-indicator empty">Planner, Worker and Reviewer working&hellip;</span>
+      <div id="ma-out" class="result"></div>
       {render_trace(data.get('agentic_trace'))}"""
 
 
@@ -402,6 +406,63 @@ def mispricing_save():
             f'<span class="pill">{escape(data["verdict"])}</span> (confidence {escape(data["confidence"])})</p>'
             + render_trace(data.get("agentic_trace")))
     return html, 200, {"HX-Trigger": "analyses-changed"}
+
+
+# ---------------- Release 2: Multi-Agent review (Planner -> Worker -> Reviewer -> Human Review) ----------------
+
+def render_run(run):
+    plan, worker, review = run.get("plan", {}), run.get("worker_output", {}), run.get("review", {})
+    rec = review.get("recommendation", "")
+    cls = "ok" if rec == "approve" else "warn" if rec == "approve_with_caution" else "err"
+    steps = "".join(f"<li>{escape(s)}</li>" for s in plan.get("steps", []))
+    evidence = "".join(f"<li>{escape(e)}</li>" for e in worker.get("evidence_gathered", [])) or "<li>None gathered.</li>"
+    risks = "".join(f"<li>{escape(r)}</li>" for r in review.get("risks", [])) or '<li class="ok">No risks flagged.</li>'
+    return f"""
+      <p class="empty">Run <code>{escape(run.get('run_id'))}</code> &middot; status <strong>{escape(run.get('status'))}</strong></p>
+      <p><strong>1. Planner</strong> &mdash; task plan:</p><ol>{steps}</ol>
+      <p><strong>2. Worker</strong> &mdash; evidence gathered:</p><ul>{evidence}</ul>
+      <p><strong>3. Reviewer</strong> &mdash; <span class="{cls}">{escape(rec)}</span>
+         ({escape(review.get('confidence'))} confidence):</p><ul>{risks}</ul>"""
+
+
+@app.post("/multi-agent/validate")
+def frontend_multi_agent_validate():
+    params = {"polymarket_id": request.form.get("polymarket_id", ""),
+              "kalshi_ticker": request.form.get("kalshi_ticker", "")}
+    data = post_backend("/multi-agent/validate", params, timeout=60)
+    if data.get("status") != "ok":
+        return backend_error(data, "Multi-Agent request failed")
+    run = data["run"]
+    run_id = escape(run.get("run_id"))
+    return render_run(run) + f"""
+      <p><strong>4. Human review</strong> &mdash; your decision:</p>
+      <form class="row" hx-post="/multi-agent/review" hx-target="#ma-out" hx-swap="innerHTML" style="margin:0;">
+        <input type="hidden" name="run_id" value="{run_id}">
+        <select name="decision">
+          <option value="approve">Approve</option>
+          <option value="correct">Correct</option>
+          <option value="partial">Partially accept</option>
+          <option value="reject">Reject</option>
+        </select>
+        <input type="text" name="notes" maxlength="300" placeholder="Notes (e.g. confirm event terms match first)">
+        <button type="submit">Submit Decision</button>
+      </form>"""
+
+
+@app.post("/multi-agent/review")
+def frontend_multi_agent_review():
+    payload = {"run_id": request.form.get("run_id"), "decision": request.form.get("decision"),
+               "notes": request.form.get("notes") or None}
+    data = post_backend("/multi-agent/review", payload, timeout=30)
+    if data.get("status") != "ok":
+        return backend_error(data, "Review submission failed")
+    run = data["run"]
+    hd = run.get("human_decision") or {}
+    cls = "ok" if run.get("status") == "approved" else "err" if run.get("status") == "rejected" else "warn"
+    return render_run(run) + f"""
+      <p><strong>4. Human review</strong> &mdash; <span class="{cls}">{escape(run.get('status'))}</span>
+         at {escape(run.get('decided_at'))}{(' &middot; ' + str(escape(hd.get('notes')))) if hd.get('notes') else ''}</p>
+      <p class="empty">Saved to the Multi-Agent Server's workflow history and audit log.</p>"""
 
 
 # ---------------- Release 1: grounded answers (RAG) ----------------

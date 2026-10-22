@@ -19,9 +19,10 @@ jobs:
   build-and-validate:
     runs-on: ubuntu-latest
     env:
-      # Release 1: MCP + RAG integration is retained but disabled in CI/CD
+      # Release 1/2: MCP + RAG + Multi-Agent integration is retained but disabled in CI/CD
       MCP_ENABLED: "false"
       RAG_ENABLED: "false"
+      MULTI_AGENT_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -57,10 +58,10 @@ jobs:
       - name: Build Docker image
         run: docker build -t student-4-image "./student-4"
 
-      - name: Smoke test container with MCP/RAG disabled
+      - name: Smoke test container with MCP/RAG/Multi-Agent disabled
         run: |
           docker run -d --name s4 -p 5004:5004 -e DB_PATH=/tmp/s4.db \
-            -e MCP_ENABLED=false -e RAG_ENABLED=false student-4-image
+            -e MCP_ENABLED=false -e RAG_ENABLED=false -e MULTI_AGENT_ENABLED=false student-4-image
           for i in $(seq 1 20); do curl -sf http://localhost:5004/health && break; sleep 1; done
           echo; echo "--- CRUD still works ---"
           curl -sf http://localhost:5004/markets | head -c 200; echo
@@ -72,4 +73,8 @@ jobs:
           curl -s -X POST http://localhost:5004/rag/ask -H 'Content-Type: application/json' \
             -d '{"query":"Is the Fed October market mispriced?"}' | tee rag.json
           grep -q '"disabled"' rag.json
+          echo; echo "--- Multi-Agent (expect disabled) ---"
+          curl -s -X POST http://localhost:5004/multi-agent/validate -H 'Content-Type: application/json' \
+            -d '{"polymarket_id":"1","kalshi_ticker":"KX-1"}' | tee ma.json
+          grep -q '"disabled"' ma.json
           docker rm -f s4
