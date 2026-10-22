@@ -78,9 +78,21 @@ az identity federated-credential create \
   --identity-name group29-r2-github-identity \
   --resource-group "$RESOURCE_GROUP" \
   --issuer https://token.actions.githubusercontent.com \
-  --subject repo:Erfanur1/ADVSD:ref:refs/heads/main \
+  --subject "repo:Erfanur1@169593210/ADVSD@1343409389:ref:refs/heads/main" \
   --audiences api://AzureADTokenExchange
 ```
+
+**Note on the `--subject` format**: GitHub's OIDC tokens now include
+immutable owner/repo IDs in the subject claim
+(`repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:<ref>`), not the plain
+`repo:<owner>/<repo>:ref:<ref>` most docs/examples (including Azure's
+own) still show. Using the plain form fails Azure-side with
+`AADSTS700213: No matching federated identity record found`. If you
+ever need the exact current value for this repo, trigger the workflow
+once with a deliberately wrong `--subject` and read the real one back
+out of the `azure/login` step's failure log (`subject claim - ...`), or
+check Settings -> Actions -> General -> "Customize the JWT claims" for
+this repo once GitHub's subject-claim customization UI is out of beta.
 
 Then add three GitHub Actions secrets (Settings -> Secrets and
 variables -> Actions): `AZURE_CLIENT_ID` (the identity's `clientId`),
