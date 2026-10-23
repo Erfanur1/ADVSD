@@ -1,6 +1,7 @@
 import os
 import requests
 from flask import Flask, render_template_string, request
+from markupsafe import escape
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -66,6 +67,21 @@ PAGE = """
       <div id="ai-out"></div>
     </div>
   </section>
+
+  <section>
+    <h2>Multi-Agent validation</h2>
+    <div class="panel">
+      <p class="empty">Press <b>Validate</b> on a watchlist item. A Planner, Worker and Reviewer agent check it
+      against live market data, then you make the final decision.</p>
+      <input id="ma-market" name="ma_market" placeholder="Live market id (optional, e.g. KXBTCMAX100-26-DEC)" style="width:55%">
+      <select id="ma-source" name="ma_source">
+        <option value="kalshi">kalshi</option>
+        <option value="polymarket">polymarket</option>
+      </select>
+      <span id="ma-loading" class="htmx-indicator empty">Agents working&hellip;</span>
+      <div id="ma-out"></div>
+    </div>
+  </section>
 </main></body></html>
 """
 
@@ -100,6 +116,10 @@ def render_entry(r):
         <input name="priority" placeholder="0-3" value="{r.get('priority', 0)}" style="max-width:60px">
         <button type="submit">Save</button>
       </form>
+      <button hx-post="/multi-agent/{r['id']}/validate" hx-include="#ma-market,#ma-source"
+              hx-target="#ma-out" hx-indicator="#ma-loading">
+        Validate (Multi-Agent)
+      </button>
       <button hx-post="/watchlist/{r['id']}/delete" hx-target="#watchlist" hx-swap="innerHTML">
         Remove
       </button>
@@ -233,6 +253,90 @@ def rag_ask():
       {f'<ul class="citations">{citation_html}</ul>' if citation_html else ''}
     </div>
     """
+
+
+DECISIONS = {"approve": "Approve", "correct": "Correct", "partial": "Partial accept", "reject": "Reject"}
+
+
+def render_trace(trace):
+    if not trace:
+        return ""
+    rows = "".join(f"<li><b>{escape(t.get('stage', ''))}</b>: {escape(t.get('detail', ''))}</li>" for t in trace)
+    return f'<ul class="citations">{rows}</ul>'
+
+
+def render_run(run, trace):
+    plan = run.get("plan", {})
+    worker = run.get("worker_output", {})
+    review = run.get("review", {})
+    steps = "".join(f"<li>{escape(step)}</li>" for step in plan.get("steps", []))
+    risks = "".join(f"<li>{escape(risk)}</li>" for risk in review.get("risks", []))
+    live = worker.get("live_market")
+    live_html = (
+        f"<p>Live evidence: {escape(live.get('title', ''))} at {escape(live.get('probability', ''))}"
+        f" (delta {escape(worker.get('delta'))})</p>"
+        if isinstance(live, dict)
+        else "<p>Live evidence: none gathered.</p>"
+    )
+    buttons = "".join(
+        f'<button hx-post="/multi-agent/review/{escape(run.get("run_id", ""))}/{key}" '
+        f'hx-target="#ma-out">{label}</button> '
+        for key, label in DECISIONS.items()
+    )
+    return f"""
+    <div class="rag-answer">
+      <p class="pill">Run {escape(run.get('run_id', ''))} &middot; {escape(run.get('status', ''))}</p>
+      <h3>Planner</h3><ul class="citations">{steps}</ul>
+      <h3>Worker</h3>{live_html}
+      <h3>Reviewer</h3>
+      <p>Recommendation: <b>{escape(review.get('recommendation', ''))}</b> (confidence {escape(review.get('confidence', ''))})</p>
+      <ul class="citations">{risks}</ul>
+      <h3>Human review</h3>
+      <p>Nothing is applied until you decide:</p>
+      {buttons}
+      {render_trace(trace)}
+    </div>
+    """
+
+
+@app.post("/multi-agent/<int:wid>/validate")
+def multi_agent_validate(wid):
+    payload = {"watchlist_id": wid, "source": request.form.get("ma_source") or "kalshi"}
+    market = (request.form.get("ma_market") or "").strip()
+    if market:
+        payload["market_id"] = market
+    try:
+        data = requests.post(f"{API}/multi-agent/validate", json=payload, timeout=60).json()
+    except Exception as exc:
+        print(f"[multi-agent] validate failed for item {wid}: {exc}")
+        return '<p class="empty">Couldn\'t reach the backend. Try again shortly.</p>'
+    run = data.get("run")
+    if not run:
+        return render_trace(data.get("agentic_trace")) + (
+            '<p class="empty">The Multi-Agent Server is unavailable (it is disabled in the cloud deployment).</p>'
+        )
+    return render_run(run, data.get("agentic_trace", []))
+
+
+@app.post("/multi-agent/review/<string:run_id>/<string:decision>")
+def multi_agent_review(run_id, decision):
+    if decision not in DECISIONS:
+        return '<p class="empty">Unknown decision.</p>'
+    try:
+        resp = requests.post(
+            f"{API}/multi-agent/review", json={"run_id": run_id, "decision": decision}, timeout=20
+        )
+        data = resp.json()
+    except Exception as exc:
+        print(f"[multi-agent] review failed for run {run_id}: {exc}")
+        return '<p class="empty">Couldn\'t record the decision. Try again shortly.</p>'
+    if resp.status_code >= 400:
+        return f'<p class="empty">Decision not recorded: {escape(data.get("error", resp.status_code))}</p>'
+    return (
+        f'<div class="rag-answer"><p class="pill">Run {escape(run_id)} &middot; '
+        f'{escape(data.get("status", "decided"))}</p>'
+        f"<p>Human decision recorded: <b>{escape(DECISIONS[decision])}</b>.</p></div>"
+    )
 
 
 if __name__ == "__main__":
