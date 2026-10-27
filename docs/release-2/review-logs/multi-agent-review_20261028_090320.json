@@ -1,0 +1,58 @@
+{
+  "mode": "multi-agent-review",
+  "timestamp": "20261028_090320",
+  "trace": [
+    {
+      "stage": "Plan",
+      "detail": "Review the Multi-Agent Server's workflow history: every run must show Planner, Worker and Reviewer stages and a recorded human decision."
+    },
+    {
+      "stage": "Act",
+      "detail": "Loaded 7 run record(s) from Multi-Agent Server at http://localhost:8300."
+    },
+    {
+      "stage": "Observe",
+      "detail": "4 completed cycle(s), 3 pending, 0 incomplete; human agreed with the Reviewer in 4 of 4 decision(s)."
+    },
+    {
+      "stage": "Adapt",
+      "detail": "Verdict: PASS. 3 recommendation(s) produced."
+    }
+  ],
+  "result": {
+    "source": "Multi-Agent Server at http://localhost:8300",
+    "findings": {
+      "total_runs": 7,
+      "by_status": {
+        "partially_accepted": 2,
+        "pending_human_review": 3,
+        "approved": 2
+      },
+      "by_task_type": {
+        "review_portfolio": 7
+      },
+      "by_feature": {
+        "portfolio": 7
+      },
+      "completed_cycles": 4,
+      "pending_human_review": 3,
+      "incomplete_runs": [],
+      "runs_with_insufficient_evidence": 0,
+      "human_agreed_with_reviewer": 4,
+      "human_overrode_reviewer": 0,
+      "agreement_rate": 1.0,
+      "unsupported_overrides": [],
+      "decisions_missing_notes": [
+        "7e04daf39dc6: 'partial' recorded without notes",
+        "d9be09fcdf0f: 'partial' recorded without notes"
+      ],
+      "avg_decision_seconds": 29.8
+    },
+    "verdict": "pass",
+    "recommendations": [
+      "3 run(s) still await a human decision: decide or reject them.",
+      "Some correct/partial/reject decisions have no notes: add notes so the audit trail explains them.",
+      "Only one task type has been exercised: run other features' task types to show cross-feature use."
+    ]
+  }
+}
