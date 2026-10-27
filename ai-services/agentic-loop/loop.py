@@ -13,6 +13,13 @@ it to a timestamped log file for the report.
 Run:
   python loop.py --mode mcp
   python loop.py --mode rag
+
+Release 2 adds three review modes (implemented in reviews.py):
+  python loop.py --mode multi-agent-review
+  python loop.py --mode testing-review [--students student-2] [--skip-audit] [--skip-ci]
+  python loop.py --mode cloud-deployment-review --resource-group group29-r2-rg [--crud-check]
+                 [--decision approve|conditional|reject --notes "..."]
+Review logs and Markdown reports are written to docs/release-2/review-logs/.
 """
 import os
 import sys
@@ -138,13 +145,36 @@ def run_rag_validation():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Release 1 agentic loop validation modes")
-    parser.add_argument("--mode", choices=["mcp", "rag"], required=True)
+    parser = argparse.ArgumentParser(description="Shared agentic loop: Release 1 validation + Release 2 review modes")
+    parser.add_argument("--mode", required=True, choices=[
+        "mcp", "rag", "multi-agent-review", "testing-review", "cloud-deployment-review"])
+    parser.add_argument("--history", help="multi-agent-review: workflow_history.json to use if the server is down")
+    parser.add_argument("--students", nargs="+", help="testing-review: limit to these folders, e.g. student-2")
+    parser.add_argument("--skip-audit", action="store_true", help="testing-review: skip pip-audit (offline)")
+    parser.add_argument("--skip-ci", action="store_true", help="testing-review: skip the GitHub Actions lookup")
+    parser.add_argument("--resource-group", default=os.getenv("RESOURCE_GROUP", "group29-r2-rg"))
+    parser.add_argument("--url", action="append", default=[], metavar="NAME=URL",
+                        help="cloud-deployment-review: app URL when Azure CLI is unavailable (repeatable)")
+    parser.add_argument("--crud-check", action="store_true",
+                        help="cloud-deployment-review: open and close a test position on Student 2")
+    parser.add_argument("--decision", choices=["approve", "conditional", "reject"],
+                        help="cloud-deployment-review: human release decision (prompted if omitted)")
+    parser.add_argument("--notes", help="cloud-deployment-review: one-line justification")
     args = parser.parse_args()
 
     if args.mode == "mcp":
         ok = run_mcp_validation()
-    else:
+    elif args.mode == "rag":
         ok = run_rag_validation()
+    else:
+        import reviews
+        if args.mode == "multi-agent-review":
+            ok = reviews.run_multi_agent_review(args.history)
+        elif args.mode == "testing-review":
+            ok = reviews.run_testing_review(args.students, skip_audit=args.skip_audit, skip_ci=args.skip_ci)
+        else:
+            urls = dict(u.split("=", 1) for u in args.url if "=" in u)
+            ok = reviews.run_cloud_deployment_review(args.resource_group, urls=urls, crud=args.crud_check,
+                                                     decision=args.decision, notes=args.notes)
 
     sys.exit(0 if ok else 1)
