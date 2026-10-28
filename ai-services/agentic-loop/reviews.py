@@ -21,6 +21,7 @@ Runs locally, NOT containerised.
 import datetime
 import json
 import os
+import shutil
 import subprocess  # noqa: S404 -- fixed, hardcoded tool commands only (see _run)
 import sys
 import tempfile
@@ -475,14 +476,24 @@ def run_testing_review(students=None, skip_audit=False, skip_ci=False):
 
 # ================================================================ 3. CLOUD DEPLOYMENT REVIEW
 def _az_json(args):
-    code, out = _run(["az", *args, "-o", "json"], timeout=120)
-    if code != 0:
+    # On Windows the Azure CLI is az.cmd, which subprocess can't find by the bare
+    # name "az", so resolve the full path first.
+    az = shutil.which("az")
+    if not az:
         return None
     try:
-        return json.loads(out[out.index("[") if out.lstrip().startswith("[") else out.index("{"):])
+        proc = subprocess.run(  # noqa: S603 -- fixed Azure CLI query, never user input
+            [az, *args, "-o", "json"], capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        print(f"  (az failed: {(proc.stderr or '').strip()[:200]})")
+        return None
+    try:
+        return json.loads(proc.stdout)
     except ValueError:
         return None
-
 
 def discover_cloud(resource_group):
     """Container App inventory from Azure CLI -> list of {name, url, status}."""

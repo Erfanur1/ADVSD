@@ -1,0 +1,152 @@
+{
+  "mode": "cloud-deployment-review",
+  "timestamp": "20261028_231703",
+  "trace": [
+    {
+      "stage": "Plan",
+      "detail": "Review the Azure deployment in resource group 'group29-r2-rg': app inventory, frontend reachability, AI services disabled by default, Student 2 CRUD, then record the human release decision."
+    },
+    {
+      "stage": "Act",
+      "detail": "Found 9 Container App(s) via az containerapp list -g group29-r2-rg; probing every external frontend over HTTPS."
+    },
+    {
+      "stage": "Observe",
+      "detail": "4/5 frontend(s) responded; 4/4 behaviour check(s) passed."
+    },
+    {
+      "stage": "Adapt",
+      "detail": "Agent recommendation: CONDITIONAL with 1 risk(s)."
+    },
+    {
+      "stage": "Adapt",
+      "detail": "Human release decision: CONDCOCONDITIONAOL -- conditional"
+    }
+  ],
+  "result": {
+    "resource_group": "group29-r2-rg",
+    "source": "az containerapp list -g group29-r2-rg",
+    "apps": [
+      {
+        "name": "group29cc-home",
+        "url": "https://group29cc-home.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": true,
+        "status": null
+      },
+      {
+        "name": "student-4-backend",
+        "url": "https://student-4-backend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": false,
+        "status": "Running"
+      },
+      {
+        "name": "student-2-backend",
+        "url": "https://student-2-backend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": false,
+        "status": "Running"
+      },
+      {
+        "name": "student-3-backend",
+        "url": "https://student-3-backend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": false,
+        "status": "Running"
+      },
+      {
+        "name": "student-1-backend",
+        "url": "https://student-1-backend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": false,
+        "status": "Running"
+      },
+      {
+        "name": "student-4-frontend",
+        "url": "https://student-4-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": true,
+        "status": "Running"
+      },
+      {
+        "name": "student-2-frontend",
+        "url": "https://student-2-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": true,
+        "status": "Running"
+      },
+      {
+        "name": "student-3-frontend",
+        "url": "https://student-3-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": true,
+        "status": "Running"
+      },
+      {
+        "name": "student-1-frontend",
+        "url": "https://student-1-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "external": true,
+        "status": "Running"
+      }
+    ],
+    "frontends": [
+      {
+        "app": "group29cc-home",
+        "url": "https://group29cc-home.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "http_status": 503,
+        "ms": 749,
+        "ok": false
+      },
+      {
+        "app": "student-4-frontend",
+        "url": "https://student-4-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "http_status": 200,
+        "ms": 1266,
+        "ok": true
+      },
+      {
+        "app": "student-2-frontend",
+        "url": "https://student-2-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "http_status": 200,
+        "ms": 1903,
+        "ok": true
+      },
+      {
+        "app": "student-3-frontend",
+        "url": "https://student-3-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "http_status": 200,
+        "ms": 1252,
+        "ok": true
+      },
+      {
+        "app": "student-1-frontend",
+        "url": "https://student-1-frontend.livelydesert-b33495c0.eastasia.azurecontainerapps.io",
+        "http_status": 200,
+        "ms": 1462,
+        "ok": true
+      }
+    ],
+    "probes": [
+      {
+        "check": "Multi-Agent disabled in cloud",
+        "http_status": 200,
+        "ok": true
+      },
+      {
+        "check": "MCP disabled in cloud",
+        "http_status": 200,
+        "ok": true
+      },
+      {
+        "check": "CRUD create (open position)",
+        "ok": true
+      },
+      {
+        "check": "CRUD delete (close position)",
+        "ok": true
+      }
+    ],
+    "recommendation": "conditional",
+    "risks": [
+      "Non-student apps not responding: group29cc-home."
+    ],
+    "human_decision": {
+      "decision": "condcoconditionaol",
+      "notes": "conditional",
+      "decided_at": "2026-10-28T23:17:03"
+    }
+  }
+}
